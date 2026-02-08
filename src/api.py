@@ -1,17 +1,28 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request, Form
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.templating import Jinja2Templates
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
 from pydantic import BaseModel
+import os
 
 from src.database import get_db
-from src.models import DraftQueue, Customer
+from src.models import DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail
 
 app = FastAPI(
     title="Mail Check AI API",
     description="AI Mail Processor - Draft Management API",
     version="1.0.0"
 )
+
+# Templates setup
+templates = Jinja2Templates(directory="src/templates")
+
+# Static files (if needed later)
+if os.path.exists("src/static"):
+    app.mount("/static", StaticFiles(directory="src/static"), name="static")
 
 
 # Pydantic schemas
@@ -186,6 +197,324 @@ def list_customers(db: Session = Depends(get_db)):
         }
         for c in customers
     ]
+
+
+# ========== Web UI Routes ==========
+
+@app.get("/ui", response_class=HTMLResponse)
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    """ダッシュボード"""
+    stats = {
+        "customer_count": db.query(Customer).count(),
+        "email_count": db.query(EmailAddress).count(),
+        "active_accounts": db.query(MailAccount).filter_by(enabled=True).count(),
+        "pending_drafts": db.query(DraftQueue).filter_by(status="pending").count(),
+        "poll_interval": os.getenv("POLL_INTERVAL", "60")
+    }
+    
+    recent_emails = db.query(ProcessedEmail).order_by(
+        ProcessedEmail.processed_at.desc()
+    ).limit(5).all()
+    
+    recent_drafts = db.query(DraftQueue).filter_by(status="pending").order_by(
+        DraftQueue.created_at.desc()
+    ).limit(5).all()
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "stats": stats,
+        "recent_emails": recent_emails,
+        "recent_drafts": recent_drafts
+    })
+
+
+@app.get("/ui/customers", response_class=HTMLResponse)
+async def customers_page(request: Request, db: Session = Depends(get_db)):
+    """顧客管理画面"""
+    customers = db.query(Customer).all()
+    customers_data = [
+        {
+            "id": c.id,
+            "name": c.name,
+            "repo_url": c.repo_url,
+            "discord_webhook": c.discord_webhook,
+            "email_count": len(c.email_addresses),
+            "created_at": c.created_at
+        }
+        for c in customers
+    ]
+    return templates.TemplateResponse("customers.html", {
+        "request": request,
+        "customers": customers_data
+    })
+
+
+@app.post("/ui/customers")
+async def create_customer(
+    name: str = Form(...),
+    repo_url: str = Form(...),
+    gitea_token: str = Form(...),
+    discord_webhook: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """顧客を作成"""
+    customer = Customer(
+        name=name,
+        repo_url=repo_url,
+        gitea_token=gitea_token,
+        discord_webhook=discord_webhook if discord_webhook else None
+    )
+    db.add(customer)
+    db.commit()
+    return RedirectResponse(url="/ui/customers", status_code=303)
+
+
+@app.post("/ui/customers/update")
+async def update_customer(
+    customer_id: int = Form(...),
+    name: str = Form(...),
+    repo_url: str = Form(...),
+    gitea_token: str = Form(None),
+    discord_webhook: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """顧客を更新"""
+    customer = db.query(Customer).filter_by(id=customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    
+    customer.name = name
+    customer.repo_url = repo_url
+    if gitea_token:
+        customer.gitea_token = gitea_token
+    customer.discord_webhook = discord_webhook if discord_webhook else None
+    db.commit()
+    return RedirectResponse(url="/ui/customers", status_code=303)
+
+
+@app.get("/ui/email-addresses", response_class=HTMLResponse)
+async def email_addresses_page(request: Request, db: Session = Depends(get_db)):
+    """メールアドレス管理画面"""
+    customers = db.query(Customer).all()
+    emails = db.query(EmailAddress).all()
+    emails_data = [
+        {
+            "email": e.email,
+            "customer_id": e.customer_id,
+            "customer_name": e.customer.name,
+            "created_at": e.created_at
+        }
+        for e in emails
+    ]
+    return templates.TemplateResponse("email_addresses.html", {
+        "request": request,
+        "customers": customers,
+        "emails": emails_data
+    })
+
+
+@app.post("/ui/email-addresses")
+async def create_email_address(
+    customer_id: int = Form(...),
+    email: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """メールアドレスを追加"""
+    email_addr = EmailAddress(
+        email=email.lower().strip(),
+        customer_id=customer_id
+    )
+    db.add(email_addr)
+    db.commit()
+    return RedirectResponse(url="/ui/email-addresses", status_code=303)
+
+
+@app.get("/ui/mail-accounts", response_class=HTMLResponse)
+async def mail_accounts_page(request: Request, db: Session = Depends(get_db)):
+    """メールアカウント管理画面"""
+    accounts = db.query(MailAccount).all()
+    return templates.TemplateResponse("mail_accounts.html", {
+        "request": request,
+        "accounts": accounts
+    })
+
+
+@app.post("/ui/mail-accounts")
+async def create_mail_account(
+    host: str = Form(...),
+    port: int = Form(...),
+    username: str = Form(...),
+    password: str = Form(...),
+    use_ssl: bool = Form(False),
+    enabled: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """メールアカウントを追加"""
+    account = MailAccount(
+        host=host,
+        port=port,
+        username=username,
+        password=password,
+        use_ssl=use_ssl,
+        enabled=enabled
+    )
+    db.add(account)
+    db.commit()
+    return RedirectResponse(url="/ui/mail-accounts", status_code=303)
+
+
+@app.post("/ui/mail-accounts/update")
+async def update_mail_account(
+    account_id: int = Form(...),
+    host: str = Form(...),
+    port: int = Form(...),
+    username: str = Form(...),
+    password: str = Form(None),
+    use_ssl: bool = Form(False),
+    enabled: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """メールアカウントを更新"""
+    account = db.query(MailAccount).filter_by(id=account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    account.host = host
+    account.port = port
+    account.username = username
+    if password:
+        account.password = password
+    account.use_ssl = use_ssl
+    account.enabled = enabled
+    db.commit()
+    return RedirectResponse(url="/ui/mail-accounts", status_code=303)
+
+
+@app.get("/ui/drafts", response_class=HTMLResponse)
+async def drafts_page(
+    request: Request,
+    customer_id: int = None,
+    status: str = "pending",
+    db: Session = Depends(get_db)
+):
+    """下書き管理画面"""
+    customers = db.query(Customer).all()
+    
+    query = db.query(DraftQueue).filter_by(status=status)
+    if customer_id:
+        query = query.filter_by(customer_id=customer_id)
+    
+    drafts = query.order_by(DraftQueue.created_at.desc()).all()
+    drafts_data = [
+        {
+            "id": d.id,
+            "customer_id": d.customer_id,
+            "customer_name": d.customer.name,
+            "message_id": d.message_id,
+            "reply_draft": d.reply_draft,
+            "summary": d.summary,
+            "issue_title": d.issue_title,
+            "issue_url": d.issue_url,
+            "status": d.status,
+            "created_at": d.created_at
+        }
+        for d in drafts
+    ]
+    
+    return templates.TemplateResponse("drafts.html", {
+        "request": request,
+        "customers": customers,
+        "drafts": drafts_data,
+        "status": status,
+        "selected_customer_id": customer_id
+    })
+
+
+# ========== API Endpoints for UI ==========
+
+@app.get("/api/customers/{customer_id}")
+def get_customer(customer_id: int, db: Session = Depends(get_db)):
+    """顧客詳細を取得"""
+    customer = db.query(Customer).filter_by(id=customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    return {
+        "id": customer.id,
+        "name": customer.name,
+        "repo_url": customer.repo_url,
+        "discord_webhook": customer.discord_webhook,
+        "created_at": customer.created_at
+    }
+
+
+@app.delete("/api/customers/{customer_id}")
+def delete_customer(customer_id: int, db: Session = Depends(get_db)):
+    """顧客を削除"""
+    customer = db.query(Customer).filter_by(id=customer_id).first()
+    if not customer:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    db.delete(customer)
+    db.commit()
+    return {"status": "success", "message": "Customer deleted"}
+
+
+@app.delete("/api/email-addresses/{email}")
+def delete_email_address(email: str, db: Session = Depends(get_db)):
+    """メールアドレスを削除"""
+    email_addr = db.query(EmailAddress).filter_by(email=email).first()
+    if not email_addr:
+        raise HTTPException(status_code=404, detail="Email address not found")
+    db.delete(email_addr)
+    db.commit()
+    return {"status": "success", "message": "Email address deleted"}
+
+
+@app.get("/api/mail-accounts/{account_id}")
+def get_mail_account(account_id: int, db: Session = Depends(get_db)):
+    """メールアカウント詳細を取得"""
+    account = db.query(MailAccount).filter_by(id=account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    return {
+        "id": account.id,
+        "host": account.host,
+        "port": account.port,
+        "username": account.username,
+        "use_ssl": account.use_ssl,
+        "enabled": account.enabled,
+        "created_at": account.created_at
+    }
+
+
+@app.patch("/api/mail-accounts/{account_id}/toggle")
+def toggle_mail_account(account_id: int, enabled: bool, db: Session = Depends(get_db)):
+    """メールアカウントの有効/無効を切り替え"""
+    account = db.query(MailAccount).filter_by(id=account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    account.enabled = enabled
+    db.commit()
+    return {"status": "success", "message": f"Account {'enabled' if enabled else 'disabled'}"}
+
+
+@app.delete("/api/mail-accounts/{account_id}")
+def delete_mail_account(account_id: int, db: Session = Depends(get_db)):
+    """メールアカウントを削除"""
+    account = db.query(MailAccount).filter_by(id=account_id).first()
+    if not account:
+        raise HTTPException(status_code=404, detail="Account not found")
+    db.delete(account)
+    db.commit()
+    return {"status": "success", "message": "Account deleted"}
+
+
+@app.get("/api/drafts/{draft_id}/text")
+def get_draft_text(draft_id: int, db: Session = Depends(get_db)):
+    """下書きテキストを取得"""
+    draft = db.query(DraftQueue).filter_by(id=draft_id).first()
+    if not draft:
+        raise HTTPException(status_code=404, detail="Draft not found")
+    return {"reply_draft": draft.reply_draft}
 
 
 if __name__ == "__main__":

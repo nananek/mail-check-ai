@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Mail Check AI{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        .sidebar {
+            min-height: 100vh;
+            background-color: #f8f9fa;
+        }
+        .nav-link.active {
+            background-color: #0d6efd;
+            color: white !important;
+        }
+        .card-header {
+            background-color: #0d6efd;
+            color: white;
+        }
+    </style>
+    {% block extra_css %}{% endblock %}
+</head>
+<body>
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar -->
+            <div class="col-md-2 sidebar p-3">
+                <h4 class="mb-4"><i class="bi bi-envelope-check"></i> Mail Check AI</h4>
+                <nav class="nav flex-column">
+                    <a class="nav-link {% if request.url.path == '/ui' %}active{% endif %}" href="/ui">
+                        <i class="bi bi-house-door"></i> ダッシュボード
+                    </a>
+                    <a class="nav-link {% if request.url.path == '/ui/customers' %}active{% endif %}" href="/ui/customers">
+                        <i class="bi bi-people"></i> 顧客管理
+                    </a>
+                    <a class="nav-link {% if request.url.path == '/ui/email-addresses' %}active{% endif %}" href="/ui/email-addresses">
+                        <i class="bi bi-envelope-at"></i> メールアドレス
+                    </a>
+                    <a class="nav-link {% if request.url.path == '/ui/mail-accounts' %}active{% endif %}" href="/ui/mail-accounts">
+                        <i class="bi bi-mailbox"></i> メールアカウント
+                    </a>
+                    <a class="nav-link {% if request.url.path == '/ui/drafts' %}active{% endif %}" href="/ui/drafts">
+                        <i class="bi bi-file-earmark-text"></i> 下書き管理
+                    </a>
+                    <hr>
+                    <a class="nav-link" href="/">
+                        <i class="bi bi-code-slash"></i> API ドキュメント
+                    </a>
+                </nav>
+            </div>
+
+            <!-- Main Content -->
+            <div class="col-md-10 p-4">
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

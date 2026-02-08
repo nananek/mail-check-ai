@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+
+{% block title %}メールアカウント管理 - Mail Check AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-mailbox"></i> POP3メールアカウント管理</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addAccountModal">
+        <i class="bi bi-plus-circle"></i> アカウント追加
+    </button>
+</div>
+
+{% if message %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">POP3アカウント一覧</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>サーバー</th>
+                        <th>ポート</th>
+                        <th>ユーザー名</th>
+                        <th>SSL/TLS</th>
+                        <th>状態</th>
+                        <th>登録日</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in accounts %}
+                    <tr>
+                        <td>{{ account.id }}</td>
+                        <td><strong>{{ account.host }}</strong></td>
+                        <td>{{ account.port }}</td>
+                        <td><code>{{ account.username }}</code></td>
+                        <td>
+                            {% if account.use_ssl %}
+                            <span class="badge bg-success"><i class="bi bi-shield-check"></i> SSL</span>
+                            {% else %}
+                            <span class="badge bg-warning"><i class="bi bi-shield-x"></i> なし</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if account.enabled %}
+                            <span class="badge bg-success">有効</span>
+                            {% else %}
+                            <span class="badge bg-secondary">無効</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ account.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editAccount({{ account.id }})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            {% if account.enabled %}
+                            <button class="btn btn-sm btn-outline-warning" onclick="toggleAccount({{ account.id }}, false)">
+                                <i class="bi bi-pause-circle"></i>
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm btn-outline-success" onclick="toggleAccount({{ account.id }}, true)">
+                                <i class="bi bi-play-circle"></i>
+                            </button>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteAccount({{ account.id }}, '{{ account.host }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">登録されているアカウントはありません</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Account Modal -->
+<div class="modal fade" id="addAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/ui/mail-accounts">
+                <div class="modal-header">
+                    <h5 class="modal-title">POP3アカウント追加</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">POP3サーバー <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="host" placeholder="pop.example.com" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ポート番号 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" name="port" value="995" required>
+                        <small class="text-muted">SSL: 995, 非SSL: 110</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">パスワード <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_ssl" id="add_use_ssl" checked>
+                        <label class="form-check-label" for="add_use_ssl">
+                            SSL/TLSを使用する
+                        </label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="enabled" id="add_enabled" checked>
+                        <label class="form-check-label" for="add_enabled">
+                            有効にする
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Account Modal -->
+<div class="modal fade" id="editAccountModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/ui/mail-accounts/update">
+                <input type="hidden" name="account_id" id="edit_account_id">
+                <div class="modal-header">
+                    <h5 class="modal-title">POP3アカウント編集</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">POP3サーバー <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="host" id="edit_host" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ポート番号 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" name="port" id="edit_port" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="username" id="edit_username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">パスワード</label>
+                        <input type="password" class="form-control" name="password" id="edit_password" placeholder="変更する場合のみ入力">
+                        <small class="text-muted">変更しない場合は空欄のままにしてください</small>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_ssl" id="edit_use_ssl">
+                        <label class="form-check-label" for="edit_use_ssl">
+                            SSL/TLSを使用する
+                        </label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="enabled" id="edit_enabled">
+                        <label class="form-check-label" for="edit_enabled">
+                            有効にする
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">更新</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function editAccount(accountId) {
+    const response = await fetch(`/api/mail-accounts/${accountId}`);
+    const account = await response.json();
+    
+    document.getElementById('edit_account_id').value = account.id;
+    document.getElementById('edit_host').value = account.host;
+    document.getElementById('edit_port').value = account.port;
+    document.getElementById('edit_username').value = account.username;
+    document.getElementById('edit_use_ssl').checked = account.use_ssl;
+    document.getElementById('edit_enabled').checked = account.enabled;
+    
+    new bootstrap.Modal(document.getElementById('editAccountModal')).show();
+}
+
+async function toggleAccount(accountId, enabled) {
+    const response = await fetch(`/api/mail-accounts/${accountId}/toggle`, {
+        method: 'PATCH',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled})
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else {
+        alert('操作に失敗しました');
+    }
+}
+
+async function deleteAccount(accountId, host) {
+    if (!confirm(`アカウント「${host}」を削除してもよろしいですか？`)) {
+        return;
+    }
+    
+    const response = await fetch(`/api/mail-accounts/${accountId}`, {
+        method: 'DELETE'
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else {
+        alert('削除に失敗しました');
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}顧客管理 - Mail Check AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-people"></i> 顧客管理</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addCustomerModal">
+        <i class="bi bi-plus-circle"></i> 新規顧客登録
+    </button>
+</div>
+
+{% if message %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">顧客一覧</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>顧客名</th>
+                        <th>リポジトリURL</th>
+                        <th>登録メールアドレス数</th>
+                        <th>Discord Webhook</th>
+                        <th>登録日</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for customer in customers %}
+                    <tr>
+                        <td>{{ customer.id }}</td>
+                        <td><strong>{{ customer.name }}</strong></td>
+                        <td><small>{{ customer.repo_url }}</small></td>
+                        <td><span class="badge bg-info">{{ customer.email_count }}</span></td>
+                        <td>
+                            {% if customer.discord_webhook %}
+                            <i class="bi bi-check-circle text-success"></i> 設定済み
+                            {% else %}
+                            <i class="bi bi-x-circle text-muted"></i> 未設定
+                            {% endif %}
+                        </td>
+                        <td>{{ customer.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editCustomer({{ customer.id }})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteCustomer({{ customer.id }}, '{{ customer.name }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted">登録されている顧客はありません</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Customer Modal -->
+<div class="modal fade" id="addCustomerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/ui/customers">
+                <div class="modal-header">
+                    <h5 class="modal-title">新規顧客登録</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">顧客名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Gitea リポジトリURL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control" name="repo_url" placeholder="https://gitea.example.com/user/repo" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Gitea APIトークン <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="gitea_token" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Discord Webhook URL（オプション）</label>
+                        <input type="url" class="form-control" name="discord_webhook" placeholder="https://discord.com/api/webhooks/...">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">登録</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Customer Modal -->
+<div class="modal fade" id="editCustomerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/ui/customers/update">
+                <input type="hidden" name="customer_id" id="edit_customer_id">
+                <div class="modal-header">
+                    <h5 class="modal-title">顧客情報編集</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">顧客名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Gitea リポジトリURL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control" name="repo_url" id="edit_repo_url" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Gitea APIトークン <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="gitea_token" id="edit_gitea_token" placeholder="変更する場合のみ入力">
+                        <small class="text-muted">変更しない場合は空欄のままにしてください</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Discord Webhook URL（オプション）</label>
+                        <input type="url" class="form-control" name="discord_webhook" id="edit_discord_webhook">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">更新</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+async function editCustomer(customerId) {
+    const response = await fetch(`/api/customers/${customerId}`);
+    const customer = await response.json();
+    
+    document.getElementById('edit_customer_id').value = customer.id;
+    document.getElementById('edit_name').value = customer.name;
+    document.getElementById('edit_repo_url').value = customer.repo_url;
+    document.getElementById('edit_discord_webhook').value = customer.discord_webhook || '';
+    
+    new bootstrap.Modal(document.getElementById('editCustomerModal')).show();
+}
+
+async function deleteCustomer(customerId, customerName) {
+    if (!confirm(`顧客「${customerName}」を削除してもよろしいですか？\n関連するメールアドレスと下書きも削除されます。`)) {
+        return;
+    }
+    
+    const response = await fetch(`/api/customers/${customerId}`, {
+        method: 'DELETE'
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else {
+        alert('削除に失敗しました');
+    }
+}
+</script>
+{% endblock %}

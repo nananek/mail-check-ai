@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}メールアドレス管理 - Mail Check AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-envelope-at"></i> メールアドレス管理（ホワイトリスト）</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addEmailModal">
+        <i class="bi bi-plus-circle"></i> メールアドレス追加
+    </button>
+</div>
+
+{% if message %}
+<div class="alert alert-success alert-dismissible fade show" role="alert">
+    {{ message }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">登録済みメールアドレス一覧</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <select class="form-select" id="customerFilter" onchange="filterByCustomer()">
+                <option value="">全ての顧客</option>
+                {% for customer in customers %}
+                <option value="{{ customer.id }}">{{ customer.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>メールアドレス</th>
+                        <th>顧客名</th>
+                        <th>登録日</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="emailTableBody">
+                    {% for email in emails %}
+                    <tr data-customer-id="{{ email.customer_id }}">
+                        <td><strong>{{ email.email }}</strong></td>
+                        <td><span class="badge bg-primary">{{ email.customer_name }}</span></td>
+                        <td>{{ email.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteEmail('{{ email.email }}')">
+                                <i class="bi bi-trash"></i> 削除
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted">登録されているメールアドレスはありません</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Email Modal -->
+<div class="modal fade" id="addEmailModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="/ui/email-addresses">
+                <div class="modal-header">
+                    <h5 class="modal-title">メールアドレス追加</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">顧客 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="customer_id" required>
+                            <option value="">選択してください</option>
+                            {% for customer in customers %}
+                            <option value="{{ customer.id }}">{{ customer.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">メールアドレス <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" name="email" placeholder="customer@example.com" required>
+                        <small class="text-muted">このアドレスからのメールのみ処理されます</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function filterByCustomer() {
+    const customerId = document.getElementById('customerFilter').value;
+    const rows = document.querySelectorAll('#emailTableBody tr');
+    
+    rows.forEach(row => {
+        if (!customerId || row.dataset.customerId === customerId) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+async function deleteEmail(email) {
+    if (!confirm(`メールアドレス「${email}」を削除してもよろしいですか？`)) {
+        return;
+    }
+    
+    const response = await fetch(`/api/email-addresses/${encodeURIComponent(email)}`, {
+        method: 'DELETE'
+    });
+    
+    if (response.ok) {
+        location.reload();
+    } else {
+        alert('削除に失敗しました');
+    }
+}
+</script>
+{% endblock %}

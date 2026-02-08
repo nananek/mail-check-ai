@@ -1,0 +1,8 @@
+volumes/
+tailscale_state/
+.git/
+.env
+*.pyc
+__pycache__/
+*.log
+.DS_Store

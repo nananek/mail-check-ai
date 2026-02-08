@@ -61,9 +61,9 @@ services:
   api:
     # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
     image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
+    #build:
+    #  context: .
+    #  dockerfile: Dockerfile
     container_name: mail_check_api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@/mail_check?host=/var/run/postgresql
