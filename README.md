@@ -225,6 +225,11 @@ http://100.x.x.x:8000/
 - 顧客情報の編集
 - 顧客の削除（関連データも削除されます）
 
+**Giteaデフォルト設定：**
+- `DEFAULT_GITEA_HOST`と`DEFAULT_GITEA_TOKEN`を環境変数で設定可能
+- 設定済みの場合、顧客登録時にGitea APIトークンはオプションになります
+- すべての顧客が同じGiteaインスタンスを使用する場合に便利です
+
 **画面情報：**
 - 顧客ID、顧客名、リポジトリURL
 - 登録メールアドレス数
@@ -383,6 +388,8 @@ http://100.x.x.x:8000/
 | `POLL_INTERVAL` | 60 | POP3ポーリング間隔（秒） |
 | `OPENAI_MODEL` | gpt-4.1 | 使用するGPTモデル |
 | `GIT_REPOS_PATH` | /tmp/git_repos | Gitリポジトリ保存先 |
+| `DEFAULT_GITEA_HOST` | - | デフォルトGiteaホストURL（オプション） |
+| `DEFAULT_GITEA_TOKEN` | - | デフォルトGitea APIトークン（オプション） |
 | `DEBUG` | false | デバッグモード |
 
 ### ネットワーク構成

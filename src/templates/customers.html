@@ -86,11 +86,20 @@
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Gitea リポジトリURL <span class="text-danger">*</span></label>
-                        <input type="url" class="form-control" name="repo_url" placeholder="https://gitea.example.com/user/repo" required>
+                        <input type="url" class="form-control" name="repo_url" 
+                               placeholder="{% if default_gitea_host %}{{ default_gitea_host }}/user/repo{% else %}https://gitea.example.com/user/repo{% endif %}" required>
+                        {% if default_gitea_host %}
+                        <small class="text-muted">デフォルトホスト: {{ default_gitea_host }}</small>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Gitea APIトークン <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" name="gitea_token" required>
+                        <label class="form-label">Gitea APIトークン {% if not has_default_token %}<span class="text-danger">*</span>{% else %}（オプション）{% endif %}</label>
+                        <input type="password" class="form-control" name="gitea_token" {% if not has_default_token %}required{% endif %}>
+                        {% if has_default_token %}
+                        <small class="text-muted">空欄の場合はデフォルトトークンを使用します</small>
+                        {% else %}
+                        <small class="text-muted">Giteaの個人用アクセストークン</small>
+                        {% endif %}
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Discord Webhook URL（オプション）</label>

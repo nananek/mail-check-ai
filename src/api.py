@@ -10,6 +10,7 @@ import os
 
 from src.database import get_db
 from src.models import DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail
+from src.config import settings
 
 app = FastAPI(
     title="Mail Check AI API",
@@ -246,23 +247,34 @@ async def customers_page(request: Request, db: Session = Depends(get_db)):
     ]
     return templates.TemplateResponse("customers.html", {
         "request": request,
-        "customers": customers_data
+        "customers": customers_data,
+        "default_gitea_host": settings.DEFAULT_GITEA_HOST,
+        "has_default_token": settings.DEFAULT_GITEA_TOKEN is not None
     })
 
 
 @app.post("/ui/customers")
 async def create_customer(
     name: str = Form(...),
-    repo_url: str = Form(...),
-    gitea_token: str = Form(...),
+    repo_url: str = Form(None),
+    gitea_token: str = Form(None),
     discord_webhook: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """顧客を作成"""
+    # Use defaults if not provided
+    final_repo_url = repo_url if repo_url else None
+    final_gitea_token = gitea_token if gitea_token else settings.DEFAULT_GITEA_TOKEN
+    
+    # If repo_url is not provided but we have a default host, we can't proceed
+    # Repo URL is still required as it's customer-specific
+    if not final_repo_url:
+        raise HTTPException(status_code=400, detail="Repository URL is required")
+    
     customer = Customer(
         name=name,
-        repo_url=repo_url,
-        gitea_token=gitea_token,
+        repo_url=final_repo_url,
+        gitea_token=final_gitea_token,
         discord_webhook=discord_webhook if discord_webhook else None
     )
     db.add(customer)

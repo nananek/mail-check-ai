@@ -23,6 +23,10 @@ class Settings(BaseSettings):
     GIT_AUTHOR_EMAIL: str = "ai@mailcheck.local"
     GIT_REPOS_PATH: str = "/tmp/git_repos"
     
+    # Gitea Defaults (for customer repositories)
+    DEFAULT_GITEA_HOST: Optional[str] = None  # e.g., "https://gitea.example.com"
+    DEFAULT_GITEA_TOKEN: Optional[str] = None
+    
     # Debug
     DEBUG: bool = False
     
