@@ -8,8 +8,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
     volumes:
       - ./volumes/postgres_data:/var/lib/postgresql
-    ports:
-      - "5432:5432"
+      - ./volumes/postgres_socket:/var/run/postgresql
+    # ports:
+    #   - "5432:5432"  # Unix Domain Socket使用のためポート公開不要
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailuser}"]
       interval: 10s
@@ -26,7 +27,7 @@ services:
     #   dockerfile: Dockerfile
     container_name: mail_check_worker
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@/mail_check?host=/var/run/postgresql
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
       POLL_INTERVAL: ${POLL_INTERVAL:-60}
@@ -35,6 +36,7 @@ services:
     volumes:
       - ./src:/app/src
       - ./volumes/git_repos:/tmp/git_repos
+      - ./volumes/postgres_socket:/var/run/postgresql
     depends_on:
       db:
         condition: service_healthy
@@ -51,11 +53,14 @@ services:
     #   dockerfile: Dockerfile
     container_name: mail_check_api
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@/mail_check?host=/var/run/postgresql
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"  # Tailscale経由のみアクセス可能
     volumes:
       - ./src:/app/src
+      - ./volumes/postgres_socket:/var/run/postgresql
     depends_on:
       db:
         condition: service_healthy
@@ -72,7 +77,7 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"  # Tailscale経由のみアクセス可能
     depends_on:
       - db
     networks:

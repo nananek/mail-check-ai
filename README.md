@@ -11,6 +11,7 @@
 - 🤖 **AI解析 (GPT-4.1)**: メール要約・Issue生成・返信案作成
 - 🎯 **自動配信**: Discord通知、Gitea Issue起票、下書きキュー保存
 - 📄 **PDF対応**: PyMuPDFによる添付PDF解析
+- 🔐 **セキュア構成**: Unix Domain Socket（DB）+ Tailscale（外部アクセス）
 
 ## 🏗️ アーキテクチャ
 
@@ -106,25 +107,48 @@ nano .env
 - `DISCORD_WEBHOOK_URL`: Discord Webhook URL (オプション)
 - `POSTGRES_PASSWORD`: データベースパスワード
 
-### 2. Docker起動
+#### 2. Tailscaleのセットアップ（外部アクセス用）
+
+このシステムはセキュリティのため、APIとpgAdminは`127.0.0.1`でのみリッスンします。
+外部からアクセスするにはTailscaleを使用してください。
+
+```bash
+# Tailscaleのインストール（Ubuntu/Debian）
+curl -fsSL https://tailscale.com/install.sh | sh
+
+# Tailscaleの起動
+sudo tailscale up
+
+# TailscaleのIPアドレスを確認
+tailscale ip -4
+# 例: 100.x.x.x
+```
+
+これで、Tailscaleネットワーク内の他のデバイスから以下でアクセス可能：
+- API: `http://100.x.x.x:8000`
+- pgAdmin: `http://100.x.x.x:5050`
+
+#### 3. Docker起動
+
+#### 3. Docker起動
 
 ```bash
 docker-compose up -d
 ```
 
 これにより以下のサービスが起動します：
-- **db**: PostgreSQL 18
+- **db**: PostgreSQL 18（Unix Domain Socket使用）
 - **worker**: メール処理ワーカー
-- **api**: REST API (port 8000)
-- **pgadmin**: データベース管理UI (port 5050)
-
-### 3. データベース初期化
+- **api**: REST API（127.0.0.1:8000でリッスン）
+- *# 4. データベース初期化
 
 マイグレーションは自動実行されますが、手動で確認する場合：
 
 ```bash
 docker-compose exec worker alembic upgrade head
 ```
+
+#### 5
 
 ### 4. 初期データ投入
 
@@ -188,14 +212,32 @@ VALUES ('mail.example.com', 995, 'support@yourcompany.com', 'password', true, tr
 | `GIT_REPOS_PATH` | /tmp/git_repos | Gitリポジトリ保存先 |
 | `DEBUG` | false | デバッグモード |
 
+### ネットワーク構成
+
+- **データベース接続**: Unix Domain Socket（`/var/run/postgresql`）を使用
+- **API/pgAdmin**: `127.0.0.1`でのみリッスン
+- **外部アクセス**: Tailscale経由で安全にアクセス
+
+### セキュリティ設計
+
+1. **Unix Domain Socket**: PostgreSQLはネットワークポートを公開せず、ソケット通信のみ
+2. **ローカルバインド**: APIとpgAdminは127.0.0.1に限定
+3. **Tailscale**: 暗号化されたメッシュネットワークで外部アクセス
+4. **ホワイトリスト**: 未登録メールアドレスは自動無視
+
 ## 📁 プロジェクト構造
 
 ```
 mail-check-ai/
-├── docker-compose.yml          # Docker構成
+├── docker-compose.yml          # Docker構成（開発・本番）
+├── docker-compose.prod.yml     # 本番環境用構成
 ├── Dockerfile                  # コンテナイメージ定義
 ├── requirements.txt            # Python依存パッケージ
 ├── alembic.ini                # Alembic設定
+├── volumes/                   # データ永続化ディレクトリ
+│   ├── postgres_data/         # PostgreSQLデータ
+│   ├── postgres_socket/       # Unix Domain Socket
+│   └── git_repos/             # Gitリポジトリキャッシュ
 ├── alembic/
 │   ├── env.py                 # Alembic環境設定
 │   └── versions/              # マイグレーションファイル
@@ -229,13 +271,47 @@ mail-check-ai/
 
 ## 🛠️ トラブルシューティング
 
+### Tailscaleで接続できない
+
+```bash
+# Tailscaleの状態確認
+sudo tailscale status
+
+# IPアドレスを確認
+tailscale ip -4
+
+# 再起動
+sudo tailscale down
+sudo tailscale up
+```
+
+他のデバイスからアクセス：
+```bash
+# APIヘルスチェック
+curl http://100.x.x.x:8000/
+
+# pgAdminはブラウザで
+http://100.x.x.x:5050/
+```
+
 ### Workerが起動しない
 ```bash
-docker-compose logs worker
+docker compose logs worker
 ```
 マイグレーションエラーの場合：
 ```bash
-docker-compose exec worker alembic upgrade head
+docker compose exec worker alembic upgrade head
+```
+
+### データベース接続エラー
+
+Unix Domain Socketの確認：
+```bash
+# ソケットファイルの存在確認
+ls -la ./volumes/postgres_socket/
+
+# PostgreSQL接続テスト
+docker compose exec worker psql -h /var/run/postgresql -U mailuser -d mail_check
 ```
 
 ### Git Push失敗
