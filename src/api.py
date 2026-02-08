@@ -1,11 +1,11 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, Form
+from fastapi import FastAPI, HTTPException, Depends, Request, Form, Path, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from datetime import datetime
-from typing import List
-from pydantic import BaseModel
+from typing import List, Optional
+from pydantic import BaseModel, Field
 import os
 import pytz
 
@@ -15,8 +15,33 @@ from src.config import settings
 
 app = FastAPI(
     title="Mail Check AI API",
-    description="AI Mail Processor - Draft Management API",
-    version="1.0.0"
+    description="""
+## Mail Check AI - メール自動処理システム
+
+顧客からのメールを自動的に処理し、AIで解析してGitea Issueを作成、返信下書きを生成するシステムです。
+
+### 主な機能
+- 📧 **メール自動受信**: POP3でメールを取得
+- 🤖 **AI解析**: OpenAIで内容を分析
+- 📝 **下書き生成**: 返信文を自動生成
+- 🎫 **Issue作成**: Gitea Issueを自動作成
+- 📂 **Gitアーカイブ**: メールと添付ファイルをGitリポジトリに保存
+- 💬 **Discord通知**: 処理結果をDiscordに通知
+
+### 技術スタック
+- FastAPI + SQLAlchemy + PostgreSQL
+- OpenAI GPT-4
+- Gitea API + GitPython
+- Docker + Docker Compose
+    """,
+    version="1.0.0",
+    contact={
+        "name": "Mail Check AI Support",
+        "url": "https://github.com/yourusername/mail-check-ai",
+    },
+    license_info={
+        "name": "MIT",
+    },
 )
 
 # Templates setup
@@ -45,25 +70,63 @@ if os.path.exists("src/static"):
     app.mount("/static", StaticFiles(directory="src/static"), name="static")
 
 
-# Pydantic schemas
+# ========== Pydantic Schemas ==========
+
 class DraftResponse(BaseModel):
-    id: int
-    customer_id: int
-    customer_name: str
-    message_id: str
-    reply_draft: str
-    summary: str
-    issue_title: str | None
-    issue_url: str | None
-    status: str
-    created_at: datetime
+    """下書き応答モデル"""
+    id: int = Field(..., description="下書きID", example=1)
+    customer_id: int = Field(..., description="顧客ID", example=1)
+    customer_name: str = Field(..., description="顧客名", example="株式会社サンプル")
+    message_id: str = Field(..., description="元メールのMessage-ID", example="<abc123@example.com>")
+    reply_draft: str = Field(..., description="返信下書き本文", example="お世話になっております。...")
+    summary: str = Field(..., description="メール要約", example="見積もり依頼の件")
+    issue_title: Optional[str] = Field(None, description="作成されたIssueのタイトル", example="見積もり依頼: ABC案件")
+    issue_url: Optional[str] = Field(None, description="作成されたIssueのURL", example="https://gitea.example.com/owner/repo/issues/123")
+    status: str = Field(..., description="ステータス (pending/sent/archived)", example="pending")
+    created_at: datetime = Field(..., description="作成日時", example="2026-02-08T10:30:00")
     
     class Config:
         from_attributes = True
 
 
 class DraftUpdate(BaseModel):
-    status: str
+    """下書き更新リクエスト"""
+    status: str = Field(..., description="更新するステータス (pending/sent/archived)", example="sent")
+
+
+class CustomerResponse(BaseModel):
+    """顧客情報応答モデル"""
+    id: int = Field(..., description="顧客ID", example=1)
+    name: str = Field(..., description="顧客名", example="株式会社サンプル")
+    email_count: int = Field(..., description="登録メールアドレス数", example=3)
+    created_at: datetime = Field(..., description="登録日時", example="2026-01-15T09:00:00")
+
+
+class CustomerDetailResponse(BaseModel):
+    """顧客詳細応答モデル"""
+    id: int = Field(..., description="顧客ID", example=1)
+    name: str = Field(..., description="顧客名", example="株式会社サンプル")
+    repo_url: str = Field(..., description="GiteaリポジトリURL", example="https://gitea.example.com/owner/repo.git")
+    discord_webhook: Optional[str] = Field(None, description="Discord Webhook URL")
+    created_at: datetime = Field(..., description="登録日時", example="2026-01-15T09:00:00")
+
+
+class MailAccountResponse(BaseModel):
+    """メールアカウント応答モデル"""
+    id: int = Field(..., description="アカウントID", example=1)
+    host: str = Field(..., description="POP3サーバーホスト", example="pop.example.com")
+    port: int = Field(..., description="POP3ポート番号", example=995)
+    username: str = Field(..., description="ユーザー名", example="user@example.com")
+    use_ssl: bool = Field(..., description="SSL/TLS使用フラグ", example=True)
+    enabled: bool = Field(..., description="有効/無効フラグ", example=True)
+    created_at: datetime = Field(..., description="登録日時", example="2026-01-15T09:00:00")
+
+
+class HealthResponse(BaseModel):
+    """ヘルスチェック応答"""
+    status: str = Field(..., description="ステータス", example="ok")
+    service: str = Field(..., description="サービス名", example="Mail Check AI API")
+    version: str = Field(..., description="バージョン", example="1.0.0")
 
 
 # ========== Web UI Routes ==========
@@ -100,9 +163,24 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
 
 # ========== REST API Endpoints ==========
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    response_model=HealthResponse,
+    tags=["System"],
+    summary="ヘルスチェック",
+    description="APIサーバーの稼働状態を確認します。"
+)
 def health_check():
-    """ヘルスチェック"""
+    """
+    ## ヘルスチェックエンドポイント
+    
+    APIサーバーが正常に稼働しているかを確認するためのエンドポイントです。
+    
+    ### レスポンス
+    - `status`: 常に "ok" を返します
+    - `service`: サービス名
+    - `version`: APIバージョン
+    """
     return {
         "status": "ok",
         "service": "Mail Check AI API",
@@ -110,14 +188,35 @@ def health_check():
     }
 
 
-@app.get("/api/drafts/{customer_id}", response_model=List[DraftResponse])
-def get_customer_drafts(customer_id: int, status: str = "pending", db: Session = Depends(get_db)):
+@app.get(
+    "/api/drafts/{customer_id}",
+    response_model=List[DraftResponse],
+    tags=["Drafts"],
+    summary="顧客の下書き一覧を取得",
+    description="指定した顧客IDに紐づく返信下書き一覧を取得します。"
+)
+def get_customer_drafts(
+    customer_id: int = Path(..., description="顧客ID", example=1),
+    status: str = Query("pending", description="フィルタするステータス (pending/sent/archived)", example="pending"),
+    db: Session = Depends(get_db)
+):
     """
-    顧客の下書き一覧を取得
+    ## 顧客別下書き一覧取得
     
-    Args:
-        customer_id: 顧客ID
-        status: フィルタするステータス (pending / sent / archived)
+    特定の顧客に関連する返信下書きをステータス別に取得します。
+    
+    ### パラメータ
+    - `customer_id`: 顧客ID（必須）
+    - `status`: フィルタするステータス（オプション、デフォルト: pending）
+      - `pending`: 未送信
+      - `sent`: 送信済み
+      - `archived`: アーカイブ済み
+    
+    ### レスポンス
+    下書き情報の配列を返します。各下書きには以下が含まれます：
+    - AI生成の返信下書き本文
+    - メール要約
+    - 作成されたGitea Issue情報
     """
     customer = db.query(Customer).filter_by(id=customer_id).first()
     if not customer:
@@ -146,13 +245,25 @@ def get_customer_drafts(customer_id: int, status: str = "pending", db: Session =
     return result
 
 
-@app.get("/api/drafts", response_model=List[DraftResponse])
-def get_all_pending_drafts(status: str = "pending", db: Session = Depends(get_db)):
+@app.get(
+    "/api/drafts",
+    response_model=List[DraftResponse],
+    tags=["Drafts"],
+    summary="全顧客の下書き一覧を取得",
+    description="すべての顧客に関する返信下書きをステータス別に取得します。"
+)
+def get_all_pending_drafts(
+    status: str = Query("pending", description="フィルタするステータス (pending/sent/archived)", example="pending"),
+    db: Session = Depends(get_db)
+):
     """
-    全顧客の下書き一覧を取得
+    ## 全下書き一覧取得
     
-    Args:
-        status: フィルタするステータス (pending / sent / archived)
+    全顧客の返信下書きをステータス別に取得します。
+    管理画面での一括確認に使用されます。
+    
+    ### パラメータ
+    - `status`: フィルタするステータス（デフォルト: pending）
     """
     drafts = db.query(DraftQueue).filter_by(status=status).order_by(
         DraftQueue.created_at.desc()
@@ -176,13 +287,27 @@ def get_all_pending_drafts(status: str = "pending", db: Session = Depends(get_db
     return result
 
 
-@app.patch("/api/drafts/{draft_id}/complete")
-def mark_draft_complete(draft_id: int, db: Session = Depends(get_db)):
+@app.patch(
+    "/api/drafts/{draft_id}/complete",
+    tags=["Drafts"],
+    summary="下書きを完了済みとしてマーク",
+    description="指定した下書きを送信済み（sent）ステータスに変更します。"
+)
+def mark_draft_complete(
+    draft_id: int = Path(..., description="下書きID", example=1),
+    db: Session = Depends(get_db)
+):
     """
-    下書きを完了済みとしてマーク
+    ## 下書き完了マーク
     
-    Args:
-        draft_id: 下書きID
+    下書きを送信済み（sent）としてマークします。
+    メール送信後に実行されます。
+    
+    ### パラメータ
+    - `draft_id`: 下書きID
+    
+    ### レスポンス
+    完了日時が自動的に記録されます。
     """
     draft = db.query(DraftQueue).filter_by(id=draft_id).first()
     if not draft:
@@ -195,14 +320,30 @@ def mark_draft_complete(draft_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Draft marked as sent"}
 
 
-@app.patch("/api/drafts/{draft_id}")
-def update_draft_status(draft_id: int, update: DraftUpdate, db: Session = Depends(get_db)):
+@app.patch(
+    "/api/drafts/{draft_id}",
+    tags=["Drafts"],
+    summary="下書きのステータスを更新",
+    description="指定した下書きのステータスを任意の値に変更します。"
+)
+def update_draft_status(
+    update: DraftUpdate,
+    draft_id: int = Path(..., description="下書きID", example=1),
+    db: Session = Depends(get_db)
+):
     """
-    下書きのステータスを更新
+    ## 下書きステータス更新
     
-    Args:
-        draft_id: 下書きID
-        update: 更新内容
+    下書きのステータスを変更します。
+    
+    ### パラメータ
+    - `draft_id`: 下書きID
+    - `update.status`: 新しいステータス (pending/sent/archived)
+    
+    ### ステータス遷移
+    - `pending` → `sent`: メール送信完了
+    - `pending` → `archived`: 送信せずにアーカイブ
+    - `sent` → `archived`: 処理完了後にアーカイブ
     """
     draft = db.query(DraftQueue).filter_by(id=draft_id).first()
     if not draft:
@@ -219,13 +360,27 @@ def update_draft_status(draft_id: int, update: DraftUpdate, db: Session = Depend
     return {"status": "success", "message": f"Draft status updated to {update.status}"}
 
 
-@app.delete("/api/drafts/{draft_id}")
-def delete_draft(draft_id: int, db: Session = Depends(get_db)):
+@app.delete(
+    "/api/drafts/{draft_id}",
+    tags=["Drafts"],
+    summary="下書きを削除",
+    description="指定した下書きをデータベースから完全に削除します。"
+)
+def delete_draft(
+    draft_id: int = Path(..., description="下書きID", example=1),
+    db: Session = Depends(get_db)
+):
     """
-    下書きを削除
+    ## 下書き削除
     
-    Args:
-        draft_id: 下書きID
+    下書きをデータベースから完全に削除します。
+    この操作は取り消せません。
+    
+    ### パラメータ
+    - `draft_id`: 削除する下書きのID
+    
+    ### 注意
+    通常はステータスを `archived` に変更することを推奨します。
     """
     draft = db.query(DraftQueue).filter_by(id=draft_id).first()
     if not draft:
@@ -237,9 +392,25 @@ def delete_draft(draft_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Draft deleted"}
 
 
-@app.get("/api/customers")
+@app.get(
+    "/api/customers",
+    response_model=List[CustomerResponse],
+    tags=["Customers"],
+    summary="全顧客のリストを取得",
+    description="登録されているすべての顧客情報を取得します。"
+)
 def list_customers(db: Session = Depends(get_db)):
-    """全顧客のリストを取得"""
+    """
+    ## 顧客一覧取得
+    
+    登録されているすべての顧客の基本情報を取得します。
+    
+    ### レスポンス
+    各顧客について以下の情報が含まれます：
+    - 顧客ID、名前
+    - 登録メールアドレス数
+    - 登録日時
+    """
     customers = db.query(Customer).all()
     return [
         {
@@ -520,9 +691,28 @@ async def update_settings(
 # ========== API Endpoints for AJAX ==========
 
 
-@app.get("/api/customers/{customer_id}")
-def get_customer(customer_id: int, db: Session = Depends(get_db)):
-    """顧客詳細を取得"""
+@app.get(
+    "/api/customers/{customer_id}",
+    response_model=CustomerDetailResponse,
+    tags=["Customers"],
+    summary="顧客詳細を取得",
+    description="指定した顧客の詳細情報を取得します。"
+)
+def get_customer(
+    customer_id: int = Path(..., description="顧客ID", example=1),
+    db: Session = Depends(get_db)
+):
+    """
+    ## 顧客詳細取得
+    
+    指定した顧客の詳細情報を取得します。
+    
+    ### パラメータ
+    - `customer_id`: 顧客ID
+    
+    ### レスポンス
+    GiteaリポジトリURL、Discord Webhook URLなどの詳細情報が含まれます。
+    """
     customer = db.query(Customer).filter_by(id=customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -535,9 +725,27 @@ def get_customer(customer_id: int, db: Session = Depends(get_db)):
     }
 
 
-@app.delete("/api/customers/{customer_id}")
-def delete_customer(customer_id: int, db: Session = Depends(get_db)):
-    """顧客を削除"""
+@app.delete(
+    "/api/customers/{customer_id}",
+    tags=["Customers"],
+    summary="顧客を削除",
+    description="指定した顧客をデータベースから削除します。関連する下書きも削除されます。"
+)
+def delete_customer(
+    customer_id: int = Path(..., description="顧客ID", example=1),
+    db: Session = Depends(get_db)
+):
+    """
+    ## 顧客削除
+    
+    顧客をデータベースから削除します。
+    
+    ### パラメータ
+    - `customer_id`: 削除する顧客のID
+    
+    ### 注意
+    関連する下書き、メールアドレスも一緒に削除されます。
+    """
     customer = db.query(Customer).filter_by(id=customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
@@ -546,9 +754,27 @@ def delete_customer(customer_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Customer deleted"}
 
 
-@app.delete("/api/email-addresses/{email}")
-def delete_email_address(email: str, db: Session = Depends(get_db)):
-    """メールアドレスを削除"""
+@app.delete(
+    "/api/email-addresses/{email}",
+    tags=["Email Addresses"],
+    summary="メールアドレスを削除",
+    description="指定したメールアドレスをホワイトリストから削除します。"
+)
+def delete_email_address(
+    email: str = Path(..., description="削除するメールアドレス", example="customer@example.com"),
+    db: Session = Depends(get_db)
+):
+    """
+    ## メールアドレス削除
+    
+    ホワイトリストからメールアドレスを削除します。
+    
+    ### パラメータ
+    - `email`: 削除するメールアドレス
+    
+    ### 注意
+    このアドレスからのメールは今後処理されなくなります。
+    """
     email_addr = db.query(EmailAddress).filter_by(email=email).first()
     if not email_addr:
         raise HTTPException(status_code=404, detail="Email address not found")
@@ -557,9 +783,26 @@ def delete_email_address(email: str, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Email address deleted"}
 
 
-@app.get("/api/mail-accounts/{account_id}")
-def get_mail_account(account_id: int, db: Session = Depends(get_db)):
-    """メールアカウント詳細を取得"""
+@app.get(
+    "/api/mail-accounts/{account_id}",
+    response_model=MailAccountResponse,
+    tags=["Mail Accounts"],
+    summary="メールアカウント詳細を取得",
+    description="指定したPOP3アカウントの詳細情報を取得します。"
+)
+def get_mail_account(
+    account_id: int = Path(..., description="アカウントID", example=1),
+    db: Session = Depends(get_db)
+):
+    """
+    ## メールアカウント詳細取得
+    
+    POP3アカウントの詳細情報を取得します。
+    パスワードは含まれません（セキュリティ上の理由）。
+    
+    ### パラメータ
+    - `account_id`: アカウントID
+    """
     account = db.query(MailAccount).filter_by(id=account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -574,9 +817,27 @@ def get_mail_account(account_id: int, db: Session = Depends(get_db)):
     }
 
 
-@app.patch("/api/mail-accounts/{account_id}/toggle")
-def toggle_mail_account(account_id: int, enabled: bool, db: Session = Depends(get_db)):
-    """メールアカウントの有効/無効を切り替え"""
+@app.patch(
+    "/api/mail-accounts/{account_id}/toggle",
+    tags=["Mail Accounts"],
+    summary="メールアカウントの有効/無効を切り替え",
+    description="POP3アカウントの有効/無効状態を切り替えます。"
+)
+def toggle_mail_account(
+    account_id: int = Path(..., description="アカウントID", example=1),
+    enabled: bool = Query(..., description="有効にする場合はtrue、無効にする場合はfalse", example=True),
+    db: Session = Depends(get_db)
+):
+    """
+    ## メールアカウント有効/無効切り替え
+    
+    POP3アカウントの有効/無効を切り替えます。
+    無効化されたアカウントからはメールを取得しません。
+    
+    ### パラメータ
+    - `account_id`: アカウントID
+    - `enabled`: 有効化する場合は `true`、無効化する場合は `false`
+    """
     account = db.query(MailAccount).filter_by(id=account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -585,9 +846,27 @@ def toggle_mail_account(account_id: int, enabled: bool, db: Session = Depends(ge
     return {"status": "success", "message": f"Account {'enabled' if enabled else 'disabled'}"}
 
 
-@app.delete("/api/mail-accounts/{account_id}")
-def delete_mail_account(account_id: int, db: Session = Depends(get_db)):
-    """メールアカウントを削除"""
+@app.delete(
+    "/api/mail-accounts/{account_id}",
+    tags=["Mail Accounts"],
+    summary="メールアカウントを削除",
+    description="指定したPOP3アカウントをデータベースから削除します。"
+)
+def delete_mail_account(
+    account_id: int = Path(..., description="アカウントID", example=1),
+    db: Session = Depends(get_db)
+):
+    """
+    ## メールアカウント削除
+    
+    POP3アカウントをデータベースから削除します。
+    
+    ### パラメータ
+    - `account_id`: 削除するアカウントのID
+    
+    ### 注意
+    削除されたアカウントからはメールを取得できなくなります。
+    """
     account = db.query(MailAccount).filter_by(id=account_id).first()
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -596,9 +875,28 @@ def delete_mail_account(account_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Account deleted"}
 
 
-@app.get("/api/drafts/{draft_id}/text")
-def get_draft_text(draft_id: int, db: Session = Depends(get_db)):
-    """下書きテキストを取得"""
+@app.get(
+    "/api/drafts/{draft_id}/text",
+    tags=["Drafts"],
+    summary="下書きテキストを取得",
+    description="指定した下書きの返信本文のみを取得します。"
+)
+def get_draft_text(
+    draft_id: int = Path(..., description="下書きID", example=1),
+    db: Session = Depends(get_db)
+):
+    """
+    ## 下書きテキスト取得
+    
+    下書きの返信本文のみを取得します。
+    メール送信時にテキストエリアに表示するために使用されます。
+    
+    ### パラメータ
+    - `draft_id`: 下書きID
+    
+    ### レスポンス
+    `reply_draft` フィールドに返信本文が含まれます。
+    """
     draft = db.query(DraftQueue).filter_by(id=draft_id).first()
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
