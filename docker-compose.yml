@@ -69,6 +69,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@/mail_check?host=/var/run/postgresql
       OPENAI_API_KEY: ${OPENAI_API_KEY}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      DEFAULT_GITEA_HOST: ${DEFAULT_GITEA_HOST}
+      DEFAULT_GITEA_TOKEN: ${DEFAULT_GITEA_TOKEN}
     network_mode: "service:tailscale"  # Tailscaleネットワークを共有
     volumes:
       - ./src:/app/src
