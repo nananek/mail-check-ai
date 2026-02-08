@@ -228,6 +228,9 @@ http://100.x.x.x:8000/
 **Giteaデフォルト設定：**
 - `DEFAULT_GITEA_HOST`と`DEFAULT_GITEA_TOKEN`を環境変数で設定可能
 - 設定済みの場合、顧客登録時にGitea APIトークンはオプションになります
+- リポジトリURLは簡略形式（`owner/repo`）または完全なURLで指定可能
+  - 簡略形式: `myuser/myrepo` → 自動的に `https://gitea.example.com/myuser/myrepo.git` に展開
+  - 完全なURL: `https://gitea.example.com/myuser/myrepo.git` → そのまま使用
 - すべての顧客が同じGiteaインスタンスを使用する場合に便利です
 
 **画面情報：**
@@ -388,9 +391,14 @@ http://100.x.x.x:8000/
 | `POLL_INTERVAL` | 60 | POP3ポーリング間隔（秒） |
 | `OPENAI_MODEL` | gpt-4.1 | 使用するGPTモデル |
 | `GIT_REPOS_PATH` | /tmp/git_repos | Gitリポジトリ保存先 |
-| `DEFAULT_GITEA_HOST` | - | デフォルトGiteaホストURL（オプション） |
-| `DEFAULT_GITEA_TOKEN` | - | デフォルトGitea APIトークン（オプション） |
+| `DEFAULT_GITEA_HOST` | - | デフォルトGiteaホストURL（例: https://gitea.example.com） |
+| `DEFAULT_GITEA_TOKEN` | - | デフォルトGitea APIトークン（全顧客共通の場合） |
 | `DEBUG` | false | デバッグモード |
+
+**Gitea簡略形式の使用例：**
+- `DEFAULT_GITEA_HOST=https://gitea.example.com` 設定時
+- 入力: `owner/repo` → 自動変換: `https://gitea.example.com/owner/repo.git`
+- 完全なURLも使用可能
 
 ### ネットワーク構成
 

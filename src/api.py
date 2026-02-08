@@ -256,20 +256,28 @@ async def customers_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/ui/customers")
 async def create_customer(
     name: str = Form(...),
-    repo_url: str = Form(None),
+    repo_url: str = Form(...),
     gitea_token: str = Form(None),
     discord_webhook: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """顧客を作成"""
-    # Use defaults if not provided
-    final_repo_url = repo_url if repo_url else None
-    final_gitea_token = gitea_token if gitea_token else settings.DEFAULT_GITEA_TOKEN
+    # Process repository URL
+    final_repo_url = repo_url.strip()
     
-    # If repo_url is not provided but we have a default host, we can't proceed
-    # Repo URL is still required as it's customer-specific
-    if not final_repo_url:
-        raise HTTPException(status_code=400, detail="Repository URL is required")
+    # If repo_url is in short form (owner/repo) and we have a default host, expand it
+    if settings.DEFAULT_GITEA_HOST and '://' not in final_repo_url:
+        # Short form: owner/repo -> https://gitea.example.com/owner/repo.git
+        if not final_repo_url.endswith('.git'):
+            final_repo_url = f"{final_repo_url}.git"
+        final_repo_url = f"{settings.DEFAULT_GITEA_HOST.rstrip('/')}/{final_repo_url}"
+    
+    # Use default token if not provided
+    final_gitea_token = gitea_token.strip() if gitea_token and gitea_token.strip() else settings.DEFAULT_GITEA_TOKEN
+    
+    # Validate that we have a token
+    if not final_gitea_token:
+        raise HTTPException(status_code=400, detail="Gitea token is required (no default configured)")
     
     customer = Customer(
         name=name,
@@ -296,10 +304,20 @@ async def update_customer(
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
     
+    # Process repository URL
+    final_repo_url = repo_url.strip()
+    
+    # If repo_url is in short form (owner/repo) and we have a default host, expand it
+    if settings.DEFAULT_GITEA_HOST and '://' not in final_repo_url:
+        # Short form: owner/repo -> https://gitea.example.com/owner/repo.git
+        if not final_repo_url.endswith('.git'):
+            final_repo_url = f"{final_repo_url}.git"
+        final_repo_url = f"{settings.DEFAULT_GITEA_HOST.rstrip('/')}/{final_repo_url}"
+    
     customer.name = name
-    customer.repo_url = repo_url
-    if gitea_token:
-        customer.gitea_token = gitea_token
+    customer.repo_url = final_repo_url
+    if gitea_token and gitea_token.strip():
+        customer.gitea_token = gitea_token.strip()
     customer.discord_webhook = discord_webhook if discord_webhook else None
     db.commit()
     return RedirectResponse(url="/customers", status_code=303)
