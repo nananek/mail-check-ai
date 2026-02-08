@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:18
+    container_name: mail_check_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mail_check}
+      POSTGRES_USER: ${POSTGRES_USER:-mailuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mail_network
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mail_check_worker
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Mail Check AI}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai@mailcheck.local}
+    volumes:
+      - ./src:/app/src
+      - git_repos:/tmp/git_repos
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m src.worker
+    restart: unless-stopped
+    networks:
+      - mail_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mail_check_api
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    networks:
+      - mail_network
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mail_check_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mailcheck.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    networks:
+      - mail_network
+
+volumes:
+  postgres_data:
+  git_repos:
+
+networks:
+  mail_network:
+    driver: bridge
