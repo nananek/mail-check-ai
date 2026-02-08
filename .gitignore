@@ -44,6 +44,9 @@ env/
 # Git repos cache
 /tmp/git_repos/
 
+# Volumes directory
+volumes/
+
 # Logs
 *.log
 logs/

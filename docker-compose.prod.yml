@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mailuser}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - ./volumes/postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailuser}"]
       interval: 10s
@@ -32,7 +32,7 @@ services:
       GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Mail Check AI}
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai@mailcheck.local}
     volumes:
-      - git_repos:/tmp/git_repos
+      - ./volumes/git_repos:/tmp/git_repos
     depends_on:
       db:
         condition: service_healthy
@@ -55,10 +55,6 @@ services:
     networks:
       - mail_network
     restart: always
-
-volumes:
-  postgres_data:
-  git_repos:
 
 networks:
   mail_network:
