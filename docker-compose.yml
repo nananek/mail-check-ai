@@ -86,16 +86,26 @@ services:
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: mail_check_pgadmin
+    user: root
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@mailcheck.local}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_LISTEN_PORT: 5050
     network_mode: "service:tailscale"  # Tailscaleネットワークを共有
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./volumes/postgres_socket:/var/run/postgresql
     depends_on:
-      - db
-      - tailscale
+      db:
+        condition: service_healthy
+      tailscale:
+        condition: service_started
     restart: unless-stopped
 
 networks:
   mail_network:
     driver: bridge
+volumes:
+  pgadmin_data:
+    driver: local
