@@ -46,8 +46,39 @@ class DraftUpdate(BaseModel):
     status: str
 
 
-@app.get("/")
-def root():
+# ========== Web UI Routes ==========
+
+@app.get("/", response_class=HTMLResponse)
+async def dashboard(request: Request, db: Session = Depends(get_db)):
+    """ダッシュボード"""
+    stats = {
+        "customer_count": db.query(Customer).count(),
+        "email_count": db.query(EmailAddress).count(),
+        "active_accounts": db.query(MailAccount).filter_by(enabled=True).count(),
+        "pending_drafts": db.query(DraftQueue).filter_by(status="pending").count(),
+        "poll_interval": os.getenv("POLL_INTERVAL", "60")
+    }
+    
+    recent_emails = db.query(ProcessedEmail).order_by(
+        ProcessedEmail.processed_at.desc()
+    ).limit(5).all()
+    
+    recent_drafts = db.query(DraftQueue).filter_by(status="pending").order_by(
+        DraftQueue.created_at.desc()
+    ).limit(5).all()
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "stats": stats,
+        "recent_emails": recent_emails,
+        "recent_drafts": recent_drafts
+    })
+
+
+# ========== REST API Endpoints ==========
+
+@app.get("/api/health")
+def health_check():
     """ヘルスチェック"""
     return {
         "status": "ok",
@@ -56,7 +87,7 @@ def root():
     }
 
 
-@app.get("/drafts/{customer_id}", response_model=List[DraftResponse])
+@app.get("/api/drafts/{customer_id}", response_model=List[DraftResponse])
 def get_customer_drafts(customer_id: int, status: str = "pending", db: Session = Depends(get_db)):
     """
     顧客の下書き一覧を取得
@@ -92,7 +123,7 @@ def get_customer_drafts(customer_id: int, status: str = "pending", db: Session =
     return result
 
 
-@app.get("/drafts", response_model=List[DraftResponse])
+@app.get("/api/drafts", response_model=List[DraftResponse])
 def get_all_pending_drafts(status: str = "pending", db: Session = Depends(get_db)):
     """
     全顧客の下書き一覧を取得
@@ -122,7 +153,7 @@ def get_all_pending_drafts(status: str = "pending", db: Session = Depends(get_db
     return result
 
 
-@app.patch("/drafts/{draft_id}/complete")
+@app.patch("/api/drafts/{draft_id}/complete")
 def mark_draft_complete(draft_id: int, db: Session = Depends(get_db)):
     """
     下書きを完了済みとしてマーク
@@ -141,7 +172,7 @@ def mark_draft_complete(draft_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Draft marked as sent"}
 
 
-@app.patch("/drafts/{draft_id}")
+@app.patch("/api/drafts/{draft_id}")
 def update_draft_status(draft_id: int, update: DraftUpdate, db: Session = Depends(get_db)):
     """
     下書きのステータスを更新
@@ -165,7 +196,7 @@ def update_draft_status(draft_id: int, update: DraftUpdate, db: Session = Depend
     return {"status": "success", "message": f"Draft status updated to {update.status}"}
 
 
-@app.delete("/drafts/{draft_id}")
+@app.delete("/api/drafts/{draft_id}")
 def delete_draft(draft_id: int, db: Session = Depends(get_db)):
     """
     下書きを削除
@@ -183,8 +214,7 @@ def delete_draft(draft_id: int, db: Session = Depends(get_db)):
     return {"status": "success", "message": "Draft deleted"}
 
 
-# 顧客管理エンドポイント
-@app.get("/customers")
+@app.get("/api/customers")
 def list_customers(db: Session = Depends(get_db)):
     """全顧客のリストを取得"""
     customers = db.query(Customer).all()
@@ -199,36 +229,7 @@ def list_customers(db: Session = Depends(get_db)):
     ]
 
 
-# ========== Web UI Routes ==========
-
-@app.get("/ui", response_class=HTMLResponse)
-async def dashboard(request: Request, db: Session = Depends(get_db)):
-    """ダッシュボード"""
-    stats = {
-        "customer_count": db.query(Customer).count(),
-        "email_count": db.query(EmailAddress).count(),
-        "active_accounts": db.query(MailAccount).filter_by(enabled=True).count(),
-        "pending_drafts": db.query(DraftQueue).filter_by(status="pending").count(),
-        "poll_interval": os.getenv("POLL_INTERVAL", "60")
-    }
-    
-    recent_emails = db.query(ProcessedEmail).order_by(
-        ProcessedEmail.processed_at.desc()
-    ).limit(5).all()
-    
-    recent_drafts = db.query(DraftQueue).filter_by(status="pending").order_by(
-        DraftQueue.created_at.desc()
-    ).limit(5).all()
-    
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
-        "stats": stats,
-        "recent_emails": recent_emails,
-        "recent_drafts": recent_drafts
-    })
-
-
-@app.get("/ui/customers", response_class=HTMLResponse)
+@app.get("/customers", response_class=HTMLResponse)
 async def customers_page(request: Request, db: Session = Depends(get_db)):
     """顧客管理画面"""
     customers = db.query(Customer).all()
@@ -266,10 +267,10 @@ async def create_customer(
     )
     db.add(customer)
     db.commit()
-    return RedirectResponse(url="/ui/customers", status_code=303)
+    return RedirectResponse(url="/customers", status_code=303)
 
 
-@app.post("/ui/customers/update")
+@app.post("/customers/update")
 async def update_customer(
     customer_id: int = Form(...),
     name: str = Form(...),
@@ -289,10 +290,10 @@ async def update_customer(
         customer.gitea_token = gitea_token
     customer.discord_webhook = discord_webhook if discord_webhook else None
     db.commit()
-    return RedirectResponse(url="/ui/customers", status_code=303)
+    return RedirectResponse(url="/customers", status_code=303)
 
 
-@app.get("/ui/email-addresses", response_class=HTMLResponse)
+@app.get("/email-addresses", response_class=HTMLResponse)
 async def email_addresses_page(request: Request, db: Session = Depends(get_db)):
     """メールアドレス管理画面"""
     customers = db.query(Customer).all()
@@ -326,10 +327,10 @@ async def create_email_address(
     )
     db.add(email_addr)
     db.commit()
-    return RedirectResponse(url="/ui/email-addresses", status_code=303)
+    return RedirectResponse(url="/email-addresses", status_code=303)
 
 
-@app.get("/ui/mail-accounts", response_class=HTMLResponse)
+@app.get("/mail-accounts", response_class=HTMLResponse)
 async def mail_accounts_page(request: Request, db: Session = Depends(get_db)):
     """メールアカウント管理画面"""
     accounts = db.query(MailAccount).all()
@@ -360,10 +361,10 @@ async def create_mail_account(
     )
     db.add(account)
     db.commit()
-    return RedirectResponse(url="/ui/mail-accounts", status_code=303)
+    return RedirectResponse(url="/mail-accounts", status_code=303)
 
 
-@app.post("/ui/mail-accounts/update")
+@app.post("/mail-accounts/update")
 async def update_mail_account(
     account_id: int = Form(...),
     host: str = Form(...),
@@ -387,10 +388,10 @@ async def update_mail_account(
     account.use_ssl = use_ssl
     account.enabled = enabled
     db.commit()
-    return RedirectResponse(url="/ui/mail-accounts", status_code=303)
+    return RedirectResponse(url="/mail-accounts", status_code=303)
 
 
-@app.get("/ui/drafts", response_class=HTMLResponse)
+@app.get("/drafts", response_class=HTMLResponse)
 async def drafts_page(
     request: Request,
     customer_id: int = None,
@@ -429,8 +430,6 @@ async def drafts_page(
         "selected_customer_id": customer_id
     })
 
-
-# ========== API Endpoints for UI ==========
 
 @app.get("/api/customers/{customer_id}")
 def get_customer(customer_id: int, db: Session = Depends(get_db)):

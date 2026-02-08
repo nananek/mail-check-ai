@@ -29,23 +29,23 @@
             <div class="col-md-2 sidebar p-3">
                 <h4 class="mb-4"><i class="bi bi-envelope-check"></i> Mail Check AI</h4>
                 <nav class="nav flex-column">
-                    <a class="nav-link {% if request.url.path == '/ui' %}active{% endif %}" href="/ui">
+                    <a class="nav-link {% if request.url.path == '/' %}active{% endif %}" href="/">
                         <i class="bi bi-house-door"></i> ダッシュボード
                     </a>
-                    <a class="nav-link {% if request.url.path == '/ui/customers' %}active{% endif %}" href="/ui/customers">
+                    <a class="nav-link {% if request.url.path == '/customers' %}active{% endif %}" href="/customers">
                         <i class="bi bi-people"></i> 顧客管理
                     </a>
-                    <a class="nav-link {% if request.url.path == '/ui/email-addresses' %}active{% endif %}" href="/ui/email-addresses">
+                    <a class="nav-link {% if request.url.path == '/email-addresses' %}active{% endif %}" href="/email-addresses">
                         <i class="bi bi-envelope-at"></i> メールアドレス
                     </a>
-                    <a class="nav-link {% if request.url.path == '/ui/mail-accounts' %}active{% endif %}" href="/ui/mail-accounts">
+                    <a class="nav-link {% if request.url.path == '/mail-accounts' %}active{% endif %}" href="/mail-accounts">
                         <i class="bi bi-mailbox"></i> メールアカウント
                     </a>
-                    <a class="nav-link {% if request.url.path == '/ui/drafts' %}active{% endif %}" href="/ui/drafts">
+                    <a class="nav-link {% if request.url.path == '/drafts' %}active{% endif %}" href="/drafts">
                         <i class="bi bi-file-earmark-text"></i> 下書き管理
                     </a>
                     <hr>
-                    <a class="nav-link" href="/">
+                    <a class="nav-link" href="/api/docs">
                         <i class="bi bi-code-slash"></i> API ドキュメント
                     </a>
                 </nav>
