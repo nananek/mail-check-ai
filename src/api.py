@@ -253,7 +253,7 @@ async def customers_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
-@app.post("/ui/customers")
+@app.post("/customers")
 async def create_customer(
     name: str = Form(...),
     repo_url: str = Form(...),
@@ -344,7 +344,7 @@ async def email_addresses_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
-@app.post("/ui/email-addresses")
+@app.post("/email-addresses")
 async def create_email_address(
     customer_id: int = Form(...),
     email: str = Form(...),
@@ -370,7 +370,7 @@ async def mail_accounts_page(request: Request, db: Session = Depends(get_db)):
     })
 
 
-@app.post("/ui/mail-accounts")
+@app.post("/mail-accounts")
 async def create_mail_account(
     host: str = Form(...),
     port: int = Form(...),

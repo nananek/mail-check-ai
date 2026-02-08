@@ -91,7 +91,7 @@
 <div class="modal fade" id="addAccountModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/mail-accounts">
+            <form id="addAccountForm">
                 <div class="modal-header">
                     <h5 class="modal-title">POP3アカウント追加</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -140,7 +140,7 @@
 <div class="modal fade" id="editAccountModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/mail-accounts/update">
+            <form id="editAccountForm">
                 <input type="hidden" name="account_id" id="edit_account_id">
                 <div class="modal-header">
                     <h5 class="modal-title">POP3アカウント編集</h5>
@@ -189,6 +189,50 @@
 
 {% block extra_js %}
 <script>
+// Handle add account form submission
+document.getElementById('addAccountForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/mail-accounts', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || 'アカウントの追加に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+
+// Handle edit account form submission
+document.getElementById('editAccountForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/mail-accounts/update', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || 'アカウントの更新に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+
 async function editAccount(accountId) {
     const response = await fetch(`/api/mail-accounts/${accountId}`);
     const account = await response.json();

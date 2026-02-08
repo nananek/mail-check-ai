@@ -74,7 +74,7 @@
 <div class="modal fade" id="addCustomerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/customers">
+            <form id="addCustomerForm">
                 <div class="modal-header">
                     <h5 class="modal-title">新規顧客登録</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -121,7 +121,7 @@
 <div class="modal fade" id="editCustomerModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <form method="POST" action="/customers/update">
+            <form id="editCustomerForm">
                 <input type="hidden" name="customer_id" id="edit_customer_id">
                 <div class="modal-header">
                     <h5 class="modal-title">顧客情報編集</h5>
@@ -161,6 +161,50 @@
 
 {% block extra_js %}
 <script>
+// Handle add customer form submission
+document.getElementById('addCustomerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/customers', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || '顧客の登録に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+
+// Handle edit customer form submission
+document.getElementById('editCustomerForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/customers/update', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || '顧客の更新に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+
 async function editCustomer(customerId) {
     const response = await fetch(`/api/customers/${customerId}`);
     const customer = await response.json();
