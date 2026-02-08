@@ -21,9 +21,11 @@ services:
       - mail_network
 
   worker:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: mail_check_worker
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
@@ -44,9 +46,11 @@ services:
       - mail_network
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
     container_name: mail_check_api
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-mail_check}
