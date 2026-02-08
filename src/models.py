@@ -92,3 +92,12 @@ class DraftQueue(Base):
     __table_args__ = (
         Index('idx_customer_status', 'customer_id', 'status'),
     )
+
+
+class SystemSetting(Base):
+    """システム設定テーブル"""
+    __tablename__ = 'system_settings'
+
+    key = Column(String(255), primary_key=True, comment='設定キー')
+    value = Column(Text, nullable=True, comment='設定値')
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

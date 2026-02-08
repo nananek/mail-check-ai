@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}システム設定 - Mail Check AI{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-gear"></i> システム設定</h2>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">表示設定</h5>
+    </div>
+    <div class="card-body">
+        <form id="displaySettingsForm">
+            <div class="mb-3">
+                <label class="form-label">タイムゾーン</label>
+                <select class="form-select" name="timezone" id="timezone">
+                    <option value="UTC" {% if current_timezone == 'UTC' %}selected{% endif %}>UTC (協定世界時)</option>
+                    <option value="Asia/Tokyo" {% if current_timezone == 'Asia/Tokyo' %}selected{% endif %}>Asia/Tokyo (日本時間)</option>
+                    <option value="America/New_York" {% if current_timezone == 'America/New_York' %}selected{% endif %}>America/New_York (東部時間)</option>
+                    <option value="America/Los_Angeles" {% if current_timezone == 'America/Los_Angeles' %}selected{% endif %}>America/Los_Angeles (太平洋時間)</option>
+                    <option value="Europe/London" {% if current_timezone == 'Europe/London' %}selected{% endif %}>Europe/London (英国時間)</option>
+                    <option value="Europe/Paris" {% if current_timezone == 'Europe/Paris' %}selected{% endif %}>Europe/Paris (中央ヨーロッパ時間)</option>
+                    <option value="Australia/Sydney" {% if current_timezone == 'Australia/Sydney' %}selected{% endif %}>Australia/Sydney (シドニー時間)</option>
+                </select>
+                <small class="text-muted">すべての日時表示に適用されます</small>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save"></i> 保存
+            </button>
+        </form>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">Gitea デフォルト設定</h5>
+    </div>
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label">デフォルトGiteaホスト</label>
+            <input type="text" class="form-control" value="{{ gitea_host or 'なし' }}" readonly>
+            <small class="text-muted">環境変数 DEFAULT_GITEA_HOST で設定</small>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">デフォルトGiteaトークン</label>
+            <input type="password" class="form-control" value="{% if gitea_token %}••••••••••••{% else %}なし{% endif %}" readonly>
+            <small class="text-muted">環境変数 DEFAULT_GITEA_TOKEN で設定</small>
+        </div>
+        <div class="alert alert-info mb-0">
+            <i class="bi bi-info-circle"></i> Gitea設定は環境変数で管理されています。変更するには .env ファイルを編集し、コンテナを再起動してください。
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('displaySettingsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/settings', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            alert('設定を保存しました');
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || '設定の保存に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+</script>
+{% endblock %}

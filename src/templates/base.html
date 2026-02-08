@@ -45,6 +45,9 @@
                         <i class="bi bi-file-earmark-text"></i> 下書き管理
                     </a>
                     <hr>
+                    <a class="nav-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings">
+                        <i class="bi bi-gear"></i> 設定
+                    </a>
                     <a class="nav-link" href="/api/docs">
                         <i class="bi bi-code-slash"></i> API ドキュメント
                     </a>

@@ -7,9 +7,10 @@ from datetime import datetime
 from typing import List
 from pydantic import BaseModel
 import os
+import pytz
 
 from src.database import get_db
-from src.models import DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail
+from src.models import DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail, SystemSetting
 from src.config import settings
 
 app = FastAPI(
@@ -20,6 +21,24 @@ app = FastAPI(
 
 # Templates setup
 templates = Jinja2Templates(directory="src/templates")
+
+# Add timezone filter to Jinja2
+def get_system_timezone(db: Session) -> str:
+    """システム設定からタイムゾーンを取得"""
+    tz_setting = db.query(SystemSetting).filter_by(key='timezone').first()
+    return tz_setting.value if tz_setting and tz_setting.value else 'Asia/Tokyo'
+
+def format_datetime_tz(dt, tz_name='Asia/Tokyo'):
+    """Datetimeをタイムゾーンでフォーマット"""
+    if dt is None:
+        return ''
+    if dt.tzinfo is None:
+        # Assume UTC if naive
+        dt = pytz.utc.localize(dt)
+    tz = pytz.timezone(tz_name)
+    return dt.astimezone(tz).strftime('%Y-%m-%d %H:%M:%S')
+
+templates.env.filters['datetime_tz'] = format_datetime_tz
 
 # Static files (if needed later)
 if os.path.exists("src/static"):
@@ -52,6 +71,8 @@ class DraftUpdate(BaseModel):
 @app.get("/", response_class=HTMLResponse)
 async def dashboard(request: Request, db: Session = Depends(get_db)):
     """ダッシュボード"""
+    tz = get_system_timezone(db)
+    
     stats = {
         "customer_count": db.query(Customer).count(),
         "email_count": db.query(EmailAddress).count(),
@@ -72,7 +93,8 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "stats": stats,
         "recent_emails": recent_emails,
-        "recent_drafts": recent_drafts
+        "recent_drafts": recent_drafts,
+        "timezone": tz
     })
 
 
@@ -459,6 +481,43 @@ async def drafts_page(
         "status": status,
         "selected_customer_id": customer_id
     })
+
+
+@app.get("/settings", response_class=HTMLResponse)
+async def settings_page(request: Request, db: Session = Depends(get_db)):
+    """設定画面"""
+    # Get current timezone setting
+    tz_setting = db.query(SystemSetting).filter_by(key='timezone').first()
+    current_timezone = tz_setting.value if tz_setting and tz_setting.value else 'Asia/Tokyo'
+    
+    return templates.TemplateResponse("settings.html", {
+        "request": request,
+        "current_timezone": current_timezone,
+        "gitea_host": settings.DEFAULT_GITEA_HOST,
+        "gitea_token": settings.DEFAULT_GITEA_TOKEN
+    })
+
+
+@app.post("/settings")
+async def update_settings(
+    timezone: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    """設定を更新"""
+    # Update or create timezone setting
+    tz_setting = db.query(SystemSetting).filter_by(key='timezone').first()
+    if tz_setting:
+        tz_setting.value = timezone
+        tz_setting.updated_at = datetime.utcnow()
+    else:
+        tz_setting = SystemSetting(key='timezone', value=timezone)
+        db.add(tz_setting)
+    
+    db.commit()
+    return {"status": "success", "message": "Settings updated"}
+
+
+# ========== API Endpoints for AJAX ==========
 
 
 @app.get("/api/customers/{customer_id}")
