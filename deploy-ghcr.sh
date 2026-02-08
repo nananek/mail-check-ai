@@ -21,12 +21,13 @@ if [ -z "$GITHUB_REPOSITORY" ]; then
     exit 1
 fi
 
-# GHCRログイン
+# GHCRログイン（プライベートイメージの場合のみ必要）
 if [ -n "$GHCR_TOKEN" ]; then
-    echo "🔐 GHCR にログイン中..."
+    echo "🔐 プライベートイメージのためGHCRにログイン中..."
     echo "${GHCR_TOKEN}" | docker login ghcr.io -u "${GITHUB_USERNAME}" --password-stdin
 else
-    echo "⚠️  GHCR_TOKEN が未設定（パブリックイメージの場合はログイン不要）"
+    echo "ℹ️  GHCR_TOKEN未設定 - パブリックイメージとして処理します"
+    echo "   プライベートイメージの場合は .env に GHCR_TOKEN を設定してください"
 fi
 
 # 最新イメージをプル

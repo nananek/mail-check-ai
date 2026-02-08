@@ -289,9 +289,11 @@ docker-compose exec worker alembic upgrade head
 
 ## � GitHub Container Registry (GHCR) デプロイ
 
-### GitHub Actions自動ビルド設定
+### GitHub Actions自動ビルド（トークン不要）
 
-コードをGitHubにプッシュすると、自動的にDockerイメージがビルドされGHCRにプッシュされます。
+コードをGitHubにプッシュするだけで、**GitHub Actionsが自動的に**Dockerイメージをビルド・GHCRにプッシュします。
+
+💡 **GitHub Actionsでのビルド・プッシュには設定不要** — `GITHUB_TOKEN`が自動提供されます
 
 #### 1. リポジトリをGitHubにプッシュ
 
@@ -299,24 +301,45 @@ docker-compose exec worker alembic upgrade head
 git push origin main
 ```
 
-GitHub Actionsが自動的に実行され、以下のイメージタグが作成されます：
+**GitHub Actionsが自動実行**され、以下のイメージタグが作成されます：
 - `ghcr.io/yourname/mail-check-ai:latest` (mainブランチ)
 - `ghcr.io/yourname/mail-check-ai:main` (ブランチ名)
 - `ghcr.io/yourname/mail-check-ai:v1.0.0` (タグをプッシュした場合)
 - `ghcr.io/yourname/mail-check-ai:main-a1b2c3d` (コミットSHA)
 
-#### 2. Personal Access Token (PAT) の作成
+#### 2. イメージの公開設定
 
-プライベートイメージを使用する場合：
+**デフォルトはプライベート**です。パブリックにする場合：
 
+1. GitHub → リポジトリ → Packages
+2. 該当イメージ → Package settings
+3. "Change visibility" → **Public**
+
+✅ **パブリックイメージなら本番環境でもトークン不要**
+
+#### 3. 本番環境デプロイ（パブリックイメージの場合）
+
+```bash
+# .envにGITHUB_REPOSITORYのみ設定
+GITHUB_REPOSITORY=yourname/mail-check-ai
+
+# デプロイ（ログイン不要）
+docker pull ghcr.io/yourname/mail-check-ai:latest
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+#### 4. 本番環境デプロイ（プライベートイメージの場合）
+
+**Personal Access Token (PAT) の作成:**
 1. GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
 2. "Generate new token (classic)"
 3. スコープ: `read:packages` を選択
 4. トークンをコピー
 
-#### 3. 本番環境の設定
+**本番サーバーの.env設定:**
 
-`.env`ファイルに以下を追加：
+
+**本番サーバーの.env設定:**
 
 ```bash
 GITHUB_REPOSITORY=yourname/mail-check-ai
@@ -324,7 +347,7 @@ GITHUB_USERNAME=yourname
 GHCR_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 ```
 
-#### 4. 本番環境へデプロイ
+**デプロイ実行:**
 
 ```bash
 # デプロイスクリプトを使用
@@ -336,15 +359,7 @@ docker pull ghcr.io/$GITHUB_REPOSITORY:latest
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-#### 5. イメージの可視性設定
-
-デフォルトでプライベートです。公開する場合：
-
-1. GitHub → リポジトリ → Packages
-2. 該当イメージ → Package settings
-3. "Change visibility" → Public
-
-### マルチアーキテクチャサポート
+#### 5. マルチアーキテクチャサポート
 
 GitHub Actionsは以下のプラットフォーム用にビルドします：
 - `linux/amd64` (x86_64)
