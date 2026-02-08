@@ -1,0 +1,65 @@
+version: '3.8'
+
+# 本番環境用 Docker Compose - GHCRからイメージを取得
+
+services:
+  db:
+    image: postgres:18
+    container_name: mail_check_db
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mail_check}
+      POSTGRES_USER: ${POSTGRES_USER:-mailuser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mailuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - mail_network
+    restart: always
+
+  worker:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: mail_check_worker
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mail_check}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+      POLL_INTERVAL: ${POLL_INTERVAL:-60}
+      GIT_AUTHOR_NAME: ${GIT_AUTHOR_NAME:-Mail Check AI}
+      GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai@mailcheck.local}
+    volumes:
+      - git_repos:/tmp/git_repos
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m src.worker
+    networks:
+      - mail_network
+    restart: always
+
+  api:
+    image: ghcr.io/${GITHUB_REPOSITORY}:latest
+    container_name: mail_check_api
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-mail_check}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000
+    networks:
+      - mail_network
+    restart: always
+
+volumes:
+  postgres_data:
+  git_repos:
+
+networks:
+  mail_network:
+    driver: bridge

@@ -287,7 +287,83 @@ docker-compose exec worker alembic upgrade head
 - [ ] S3へのバックアップ
 - [ ] Prometheusメトリクス
 
-## 📄 ライセンス
+## � GitHub Container Registry (GHCR) デプロイ
+
+### GitHub Actions自動ビルド設定
+
+コードをGitHubにプッシュすると、自動的にDockerイメージがビルドされGHCRにプッシュされます。
+
+#### 1. リポジトリをGitHubにプッシュ
+
+```bash
+git push origin main
+```
+
+GitHub Actionsが自動的に実行され、以下のイメージタグが作成されます：
+- `ghcr.io/yourname/mail-check-ai:latest` (mainブランチ)
+- `ghcr.io/yourname/mail-check-ai:main` (ブランチ名)
+- `ghcr.io/yourname/mail-check-ai:v1.0.0` (タグをプッシュした場合)
+- `ghcr.io/yourname/mail-check-ai:main-a1b2c3d` (コミットSHA)
+
+#### 2. Personal Access Token (PAT) の作成
+
+プライベートイメージを使用する場合：
+
+1. GitHub Settings → Developer settings → Personal access tokens → Tokens (classic)
+2. "Generate new token (classic)"
+3. スコープ: `read:packages` を選択
+4. トークンをコピー
+
+#### 3. 本番環境の設定
+
+`.env`ファイルに以下を追加：
+
+```bash
+GITHUB_REPOSITORY=yourname/mail-check-ai
+GITHUB_USERNAME=yourname
+GHCR_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+#### 4. 本番環境へデプロイ
+
+```bash
+# デプロイスクリプトを使用
+./deploy-ghcr.sh
+
+# または手動で
+echo $GHCR_TOKEN | docker login ghcr.io -u $GITHUB_USERNAME --password-stdin
+docker pull ghcr.io/$GITHUB_REPOSITORY:latest
+docker-compose -f docker-compose.prod.yml up -d
+```
+
+#### 5. イメージの可視性設定
+
+デフォルトでプライベートです。公開する場合：
+
+1. GitHub → リポジトリ → Packages
+2. 該当イメージ → Package settings
+3. "Change visibility" → Public
+
+### マルチアーキテクチャサポート
+
+GitHub Actionsは以下のプラットフォーム用にビルドします：
+- `linux/amd64` (x86_64)
+- `linux/arm64` (ARM/Apple Silicon)
+
+### バージョン管理
+
+```bash
+# セマンティックバージョニング
+git tag v1.0.0
+git push origin v1.0.0
+
+# 自動的に以下が作成されます:
+# - ghcr.io/yourname/mail-check-ai:v1.0.0
+# - ghcr.io/yourname/mail-check-ai:1.0
+# - ghcr.io/yourname/mail-check-ai:1
+```
+
+## �📄 ライセンス
 
 MIT License
 
