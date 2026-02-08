@@ -125,7 +125,9 @@ tailscale ip -4
 ```
 
 これで、Tailscaleネットワーク内の他のデバイスから以下でアクセス可能：
+- **Web UI**: `http://100.x.x.x:8000/ui` ← **推奨**
 - API: `http://100.x.x.x:8000`
+- API ドキュメント: `http://100.x.x.x:8000/docs`
 - pgAdmin: `http://100.x.x.x:5050`
 
 #### 3. Docker起動
@@ -152,7 +154,26 @@ docker-compose exec worker alembic upgrade head
 
 ### 4. 初期データ投入
 
-PostgreSQLに接続して顧客・メールアドレス・POP3アカウントを登録：
+**推奨: Web UIから登録**
+
+Tailscale経由でWeb UIにアクセスして設定を行います：
+
+```bash
+# TailscaleのIPアドレス確認
+docker compose exec tailscale tailscale ip -4
+
+# ブラウザでアクセス
+# http://100.x.x.x:8000/ui
+```
+
+Web UIから以下を順番に設定：
+1. **顧客管理** → 顧客を追加（Giteaリポジトリ、APIトークン、Discord Webhook）
+2. **メールアドレス管理** → ホワイトリスト用メールアドレスを追加
+3. **POP3アカウント管理** → メールアカウントを追加・有効化
+
+**SQL直接投入（上級者向け）**
+
+PostgreSQLに接続して直接登録することも可能：
 
 ```sql
 -- 顧客登録
@@ -173,33 +194,185 @@ INSERT INTO mail_accounts (host, port, username, password, use_ssl, enabled)
 VALUES ('mail.example.com', 995, 'support@yourcompany.com', 'password', true, true);
 ```
 
-## 📡 API エンドポイント
+## 🌐 Web UI（設定管理画面）
 
-### `GET /`
-ヘルスチェック
+### アクセス方法
 
-### `GET /drafts?status=pending`
+Web UIはTailscale経由でアクセスします：
+
+```bash
+# TailscaleのIPアドレスを確認
+docker compose exec tailscale tailscale ip -4
+# 例: 100.x.x.x
+```
+
+ブラウザで以下にアクセス：
+```
+http://100.x.x.x:8000/ui
+```
+
+### 利用可能な管理画面
+
+#### 📊 ダッシュボード (`/ui`)
+- 顧客数、登録メールアドレス数、アクティブアカウント数、保留中下書き数の統計表示
+- 最近処理されたメール一覧
+- 最新の保留中下書き一覧
+- システム情報（ポーリング間隔など）
+
+#### 👥 顧客管理 (`/ui/customers`)
+**できること：**
+- 顧客の新規登録（顧客名、Giteaリポジトリ、APIトークン、Discord Webhook）
+- 顧客情報の編集
+- 顧客の削除（関連データも削除されます）
+
+**画面情報：**
+- 顧客ID、顧客名、リポジトリURL
+- 登録メールアドレス数
+- Discord Webhook設定状況
+- 登録日時
+
+#### 📧 メールアドレス管理 (`/ui/email-addresses`)
+**できること：**
+- ホワイトリスト用メールアドレスの追加
+- 顧客別フィルタリング
+- メールアドレスの削除
+
+**機能：**
+- このリストに登録されたアドレスからのメール**のみ**が処理されます
+- 未登録アドレスからのメールは自動的に無視されます
+
+#### 📮 POP3アカウント管理 (`/ui/mail-accounts`)
+**できること：**
+- POP3メールアカウントの追加（ホスト、ポート、認証情報、SSL設定）
+- アカウント情報の編集
+- アカウントの有効化/無効化
+- アカウントの削除
+
+**画面情報：**
+- サーバー情報（ホスト、ポート）
+- SSL/TLS使用状況
+- アカウント状態（有効/無効）
+- ワンクリックでアカウントの有効化/無効化切り替え
+
+#### 📝 下書き管理 (`/ui/drafts`)
+**できること：**
+- AI生成された返信下書きの閲覧
+- 顧客別フィルタリング
+- ステータス別フィルタリング（保留中/送信済み/アーカイブ）
+- 下書きのステータス更新（送信完了マーク、アーカイブ化）
+- 返信テキストのクリップボードへコピー
+- 下書きの削除
+
+**表示情報：**
+- メール要約
+- AI生成返信案
+- 作成されたGitea Issueへのリンク
+- Message-ID
+- 作成日時
+
+### UI機能一覧
+
+| 機能 | 新規追加 | 編集 | 削除 | フィルタ | その他 |
+|------|---------|------|------|---------|--------|
+| 顧客管理 | ✅ | ✅ | ✅ | - | Discord Webhook設定 |
+| メールアドレス | ✅ | - | ✅ | ✅ 顧客別 | ホワイトリスト管理 |
+| POP3アカウント | ✅ | ✅ | ✅ | - | 有効化/無効化トグル |
+| 下書き | - | - | ✅ | ✅ 顧客別・ステータス別 | ステータス更新、コピー |
+
+### 技術スタック
+
+- **フロントエンド**: Bootstrap 5.3.0 + Bootstrap Icons
+- **テンプレートエンジン**: Jinja2
+- **バックエンド**: FastAPI (HTMLResponse + Form handling)
+- **AJAX**: Fetch API (Vanilla JavaScript)
+
+## 📡 REST API エンドポイント
+
+### ヘルスチェック
+
+#### `GET /`
+サービス状態確認
+
+**レスポンス例：**
+```json
+{
+  "status": "ok",
+  "service": "Mail Check AI API",
+  "version": "1.0.0"
+}
+```
+
+### 下書き管理
+
+#### `GET /drafts?status=pending`
 全顧客の下書き一覧取得
 
-### `GET /drafts/{customer_id}?status=pending`
+**クエリパラメータ：**
+- `status`: フィルタするステータス（`pending` / `sent` / `archived`）
+
+#### `GET /drafts/{customer_id}?status=pending`
 特定顧客の下書き取得
 
-### `PATCH /drafts/{draft_id}/complete`
+#### `PATCH /drafts/{draft_id}/complete`
 下書きを完了済みとしてマーク
 
-### `PATCH /drafts/{draft_id}`
+**レスポンス例：**
+```json
+{
+  "status": "success",
+  "message": "Draft marked as sent"
+}
+```
+
+#### `PATCH /drafts/{draft_id}`
 下書きステータス更新
+
+**リクエストボディ：**
 ```json
 {
   "status": "sent"  // pending / sent / archived
 }
 ```
 
-### `DELETE /drafts/{draft_id}`
+#### `DELETE /drafts/{draft_id}`
 下書き削除
 
-### `GET /customers`
+#### `GET /api/drafts/{draft_id}/text`
+下書きテキスト取得（コピー機能用）
+
+### 顧客管理
+
+#### `GET /customers`
 顧客一覧取得
+
+#### `GET /api/customers/{customer_id}`
+顧客詳細取得
+
+#### `DELETE /api/customers/{customer_id}`
+顧客削除（関連データも削除）
+
+### メールアドレス管理
+
+#### `DELETE /api/email-addresses/{email}`
+メールアドレス削除
+
+### POP3アカウント管理
+
+#### `GET /api/mail-accounts/{account_id}`
+アカウント詳細取得
+
+#### `PATCH /api/mail-accounts/{account_id}/toggle`
+アカウント有効化/無効化
+
+**リクエストボディ：**
+```json
+{
+  "enabled": true
+}
+```
+
+#### `DELETE /api/mail-accounts/{account_id}`
+アカウント削除
 
 ## 🔧 設定項目
 
@@ -242,13 +415,20 @@ mail-check-ai/
 │   ├── env.py                 # Alembic環境設定
 │   └── versions/              # マイグレーションファイル
 │       └── 001_initial_migration.py
-└── src/
+├── src/
     ├── __init__.py
     ├── config.py              # 設定管理
     ├── models.py              # SQLAlchemyモデル
     ├── database.py            # DB接続管理
     ├── worker.py              # メール処理ワーカー
-    ├── api.py                 # FastAPI REST API
+    ├── api.py                 # FastAPI REST API + Web UI
+    ├── templates/             # Jinja2テンプレート
+    │   ├── base.html          # ベーステンプレート
+    │   ├── dashboard.html     # ダッシュボード
+    │   ├── customers.html     # 顧客管理
+    │   ├── email_addresses.html  # メールアドレス管理
+    │   ├── mail_accounts.html    # POP3アカウント管理
+    │   └── drafts.html        # 下書き管理
     └── utils/
         ├── git_handler.py     # Git操作
         ├── pdf_parser.py      # PDF解析
@@ -287,11 +467,40 @@ sudo tailscale up
 
 他のデバイスからアクセス：
 ```bash
-# APIヘルスチェック
+# Web UIヘルスチェック
 curl http://100.x.x.x:8000/
+
+# Web UIはブラウザで
+http://100.x.x.x:8000/ui
+
+# API ドキュメント
+http://100.x.x.x:8000/docs
 
 # pgAdminはブラウザで
 http://100.x.x.x:5050/
+```
+
+### Web UIにアクセスできない
+
+```bash
+# APIコンテナの状態確認
+docker compose ps api
+
+# APIログ確認
+docker compose logs api
+
+# jinja2がインストールされているか確認
+docker compose exec api python -c "import jinja2; print(jinja2.__version__)"
+```
+
+jinja2がない場合：
+```bash
+# requirements.txtを確認
+grep jinja2 requirements.txt
+
+# イメージを再ビルド
+docker compose build api
+docker compose up -d api
 ```
 
 ### Workerが起動しない
@@ -358,10 +567,12 @@ docker-compose exec worker alembic upgrade head
 - [ ] IMAP対応
 - [ ] メール送信機能（SMTP連携）
 - [ ] Slackインテグレーション
-- [ ] 管理画面UI（フロントエンド）
+- [x] ~~管理画面UI（フロントエンド）~~ ✅ Bootstrap Web UI実装済み
 - [ ] マルチテナント対応
 - [ ] S3へのバックアップ
 - [ ] Prometheusメトリクス
+- [ ] Web UIからの下書き編集機能
+- [ ] メール処理履歴の詳細表示
 
 ## � GitHub Container Registry (GHCR) デプロイ
 
