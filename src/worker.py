@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from src.database import SessionLocal
 from src.models import MailAccount, EmailAddress, ProcessedEmail, Customer, DraftQueue
 from src.utils.git_handler import GitHandler
-from src.utils.pdf_parser import PDFParser
+from src.utils.attachment_parser import AttachmentParser
 from src.utils.openai_client import OpenAIClient
 from src.config import settings
 
@@ -137,9 +137,8 @@ class EmailWorker:
                 attachments = self.extract_attachments(msg)
                 received_date = msg.get('Date', datetime.utcnow().isoformat())
                 
-                # PDFファイルからテキスト抽出
-                pdf_files = [(name, data) for name, data in attachments if name.lower().endswith('.pdf')]
-                pdf_texts = PDFParser.extract_text_from_multiple(pdf_files)
+                # 全添付ファイルからテキスト抽出
+                attachment_texts = AttachmentParser.extract_from_multiple(attachments)
                 
                 # Gitへ保存
                 try:
@@ -163,7 +162,7 @@ class EmailWorker:
                         email_body=body,
                         subject=subject,
                         from_address=from_address,
-                        attachments_text=pdf_texts,
+                        attachments_text=attachment_texts,
                         customer_name=customer.name
                     )
                     

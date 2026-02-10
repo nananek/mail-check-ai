@@ -41,25 +41,46 @@ class OpenAIClient:
             f"\n--- メール本文 ---\n{email_body}"
         ]
         
+        # 添付ファイルの内容を追加
         if attachments_text:
-            context_parts.append("\n--- 添付ファイル内容 ---")
+            context_parts.append("\n--- 添付ファイル ---")
             for filename, content in attachments_text.items():
-                context_parts.append(f"\n[{filename}]\n{content[:5000]}")  # 長すぎる場合は切り詰め
+                # ファイル拡張子を取得
+                ext = filename.split('.')[-1].upper() if '.' in filename else 'FILE'
+                context_parts.append(f"\n▼ {filename} ({ext}形式)")
+                
+                # 内容が空でない場合のみ追加
+                if content and not content.startswith('['):
+                    # 長すぎる場合は先頭のみ（既に切り詰められている場合が多い）
+                    if len(content) > 8000:
+                        context_parts.append(content[:8000] + "\n[... 以降省略 ...]")
+                    else:
+                        context_parts.append(content)
+                else:
+                    # エラーメッセージやメタ情報の場合
+                    context_parts.append(content)
         
         full_context = "\n".join(context_parts)
         
         # プロンプト
         system_prompt = """あなたは顧客サポートAIアシスタントです。
-受信したメールを解析し、以下の情報をJSON形式で返してください：
+受信したメールを解析し、以下の情報をJSON形式で返してください。
 
+メールには本文に加えて、PDF、Word、Excel、CSVなどの添付ファイルが含まれることがあります。
+添付ファイルの内容も必ず確認し、重要な情報（数値、表、データなど）を要約と返信に含めてください。
+
+返すJSON形式:
 {
-  "summary": "メール内容の簡潔な要約（2-3文）",
-  "issue_title": "このメールに基づくIssueのタイトル（50文字以内）",
-  "issue_body": "Issue本文（Markdown形式、詳細な内容と次のアクション）",
-  "reply_draft": "顧客への返信案（丁寧で具体的な内容）"
+  "summary": "メール本文と添付ファイルの内容を含む簡潔な要約（2-4文）",
+  "issue_title": "このメールに基づくIssueのタイトル（50文字以内、添付ファイルの内容も反映）",
+  "issue_body": "Issue本文（Markdown形式、詳細な内容と次のアクション、添付ファイルの重要データも記載）",
+  "reply_draft": "顧客への返信案（丁寧で具体的、添付ファイルの内容を確認したことを示す）"
 }
 
-必ずJSON形式のみを返してください。他の説明は不要です。"""
+重要:
+- 添付ファイルに表やデータが含まれる場合、重要な数値や項目を具体的に言及してください
+- 添付ファイルが解析できなかった場合は、その旨を返信案に含めてください
+- 必ずJSON形式のみを返してください。他の説明は不要です。"""
         
         try:
             response = self.client.chat.completions.create(

@@ -20,6 +20,10 @@ gitpython==3.1.41
 openai==1.10.0
 pymupdf==1.23.21
 
+# Document Processing
+python-docx==1.1.0
+openpyxl==3.1.2
+
 # HTTP & Webhooks
 requests==2.31.0
 httpx==0.26.0
