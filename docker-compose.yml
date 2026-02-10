@@ -48,6 +48,7 @@ services:
       GIT_AUTHOR_EMAIL: ${GIT_AUTHOR_EMAIL:-ai@mailcheck.local}
     volumes:
       - ./src:/app/src
+      - ./alembic:/app/alembic
       - ./volumes/git_repos:/tmp/git_repos
       - ./volumes/postgres_socket:/var/run/postgresql
     depends_on:
@@ -74,6 +75,7 @@ services:
     network_mode: "service:tailscale"  # Tailscaleネットワークを共有
     volumes:
       - ./src:/app/src
+      - ./alembic:/app/alembic
       - ./volumes/postgres_socket:/var/run/postgresql
     depends_on:
       db:
