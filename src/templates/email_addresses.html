@@ -37,6 +37,7 @@
                     <tr>
                         <th>メールアドレス</th>
                         <th>顧客名</th>
+                        <th>標準の宛名</th>
                         <th>登録日</th>
                         <th>操作</th>
                     </tr>
@@ -46,6 +47,13 @@
                     <tr data-customer-id="{{ email.customer_id }}">
                         <td><strong>{{ email.email }}</strong></td>
                         <td><span class="badge bg-primary">{{ email.customer_name }}</span></td>
+                        <td>
+                            {% if email.salutation %}
+                            <span class="text-muted">{{ email.salutation }}</span>
+                            {% else %}
+                            <span class="text-muted fst-italic">未設定</span>
+                            {% endif %}
+                        </td>
                         <td>{{ email.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteEmail('{{ email.email }}')">
@@ -87,6 +95,11 @@
                         <label class="form-label">メールアドレス <span class="text-danger">*</span></label>
                         <input type="email" class="form-control" name="email" placeholder="customer@example.com" required>
                         <small class="text-muted">このアドレスからのメールのみ処理されます</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">標準の宛名（オプション）</label>
+                        <input type="text" class="form-control" name="salutation" placeholder="例: 株式会社ABC 伊呂波社長様">
+                        <small class="text-muted">本文に名前がない場合に使用される宛名です</small>
                     </div>
                 </div>
                 <div class="modal-footer">

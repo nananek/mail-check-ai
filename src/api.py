@@ -526,6 +526,7 @@ async def email_addresses_page(request: Request, db: Session = Depends(get_db)):
             "email": e.email,
             "customer_id": e.customer_id,
             "customer_name": e.customer.name,
+            "salutation": e.salutation,
             "created_at": e.created_at
         }
         for e in emails
@@ -541,12 +542,14 @@ async def email_addresses_page(request: Request, db: Session = Depends(get_db)):
 async def create_email_address(
     customer_id: int = Form(...),
     email: str = Form(...),
+    salutation: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """メールアドレスを追加"""
     email_addr = EmailAddress(
         email=email.lower().strip(),
-        customer_id=customer_id
+        customer_id=customer_id,
+        salutation=salutation.strip() if salutation else None
     )
     db.add(email_addr)
     db.commit()
@@ -657,13 +660,21 @@ async def drafts_page(
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request, db: Session = Depends(get_db)):
     """設定画面"""
-    # Get current timezone setting
+    # Get current settings
     tz_setting = db.query(SystemSetting).filter_by(key='timezone').first()
     current_timezone = tz_setting.value if tz_setting and tz_setting.value else 'Asia/Tokyo'
+    
+    greeting_setting = db.query(SystemSetting).filter_by(key='greeting_template').first()
+    current_greeting = greeting_setting.value if greeting_setting and greeting_setting.value else 'いつもお世話になっております。'
+    
+    signature_setting = db.query(SystemSetting).filter_by(key='signature_template').first()
+    current_signature = signature_setting.value if signature_setting and signature_setting.value else ''
     
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "current_timezone": current_timezone,
+        "current_greeting": current_greeting,
+        "current_signature": current_signature,
         "gitea_host": settings.DEFAULT_GITEA_HOST,
         "gitea_token": settings.DEFAULT_GITEA_TOKEN
     })
@@ -672,6 +683,8 @@ async def settings_page(request: Request, db: Session = Depends(get_db)):
 @app.post("/settings")
 async def update_settings(
     timezone: str = Form(...),
+    greeting_template: str = Form(...),
+    signature_template: str = Form(None),
     db: Session = Depends(get_db)
 ):
     """設定を更新"""
@@ -683,6 +696,24 @@ async def update_settings(
     else:
         tz_setting = SystemSetting(key='timezone', value=timezone)
         db.add(tz_setting)
+    
+    # Update or create greeting template
+    greeting_setting = db.query(SystemSetting).filter_by(key='greeting_template').first()
+    if greeting_setting:
+        greeting_setting.value = greeting_template
+        greeting_setting.updated_at = datetime.utcnow()
+    else:
+        greeting_setting = SystemSetting(key='greeting_template', value=greeting_template)
+        db.add(greeting_setting)
+    
+    # Update or create signature template
+    sig_setting = db.query(SystemSetting).filter_by(key='signature_template').first()
+    if sig_setting:
+        sig_setting.value = signature_template if signature_template else ''
+        sig_setting.updated_at = datetime.utcnow()
+    else:
+        sig_setting = SystemSetting(key='signature_template', value=signature_template if signature_template else '')
+        db.add(sig_setting)
     
     db.commit()
     return {"status": "success", "message": "Settings updated"}

@@ -28,6 +28,7 @@ class EmailAddress(Base):
 
     email = Column(String(255), primary_key=True, comment='メールアドレス（正規化済み）')
     customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
+    salutation = Column(String(500), nullable=True, comment='標準の宛名（例: 株式会社ABC 伊呂波社長様）')
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # リレーションシップ

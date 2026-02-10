@@ -20,10 +20,23 @@ class OpenAIClient:
         subject: str,
         from_address: str,
         attachments_text: Dict[str, str],
-        customer_name: str
+        customer_name: str,
+        salutation: Optional[str] = None,
+        greeting_template: str = 'いつもお世話になっております。',
+        signature_template: str = ''
     ) -> Dict[str, Any]:
         """
         メールを解析してJSON形式の結果を返す
+        
+        Args:
+            email_body: メール本文
+            subject: 件名
+            from_address: 送信者アドレス
+            attachments_text: 添付ファイルのテキスト
+            customer_name: 顧客名
+            salutation: 標準の宛名（例: 株式会社ABC 伊呂波社長様）
+            greeting_template: 書き出し文（例: いつもお世話になっております。ほげの会計 ほげのでございます。）
+            signature_template: 標準の署名
         
         Returns:
             {
@@ -60,6 +73,16 @@ class OpenAIClient:
                     # エラーメッセージやメタ情報の場合
                     context_parts.append(content)
         
+        # 返信テンプレート情報を追加
+        context_parts.append("\n--- 返信フォーマット情報 ---")
+        context_parts.append(f"書き出し文: {greeting_template}")
+        if salutation:
+            context_parts.append(f"標準の宛名: {salutation}")
+        else:
+            context_parts.append("標準の宛名: 設定なし（メール本文から判断）")
+        if signature_template:
+            context_parts.append(f"署名:\n{signature_template}")
+        
         full_context = "\n".join(context_parts)
         
         # プロンプト
@@ -77,7 +100,28 @@ class OpenAIClient:
   "reply_draft": "顧客への返信案（丁寧で具体的、添付ファイルの内容を確認したことを示す）"
 }
 
-重要:
+【重要】返信案（reply_draft）の作成ルール:
+1. 必ず「書き出し文」から開始してください
+2. 宛名:
+   - 「標準の宛名」が設定されている場合: その宛名を使用（例: 株式会社ABC 伊呂波社長様）
+   - 「標準の宛名」が未設定の場合: メール本文や署名から送信者の役職・名前を推測して適切な宛名を付ける（「ご担当者様」は避ける）
+3. 返信本文を記載
+4. 「署名」が設定されている場合は、最後に署名を追加
+
+フォーマット例:
+```
+いつもお世話になっております。ほげの会計 ほげのでございます。
+
+株式会社ABC 伊呂波社長様
+
+（返信本文）
+
+----------------
+株式会社DEF
+営業部 山田太郎
+```
+
+その他の重要事項:
 - 添付ファイルに表やデータが含まれる場合、重要な数値や項目を具体的に言及してください
 - 添付ファイルが解析できなかった場合は、その旨を返信案に含めてください
 - 必ずJSON形式のみを返してください。他の説明は不要です。"""

@@ -10,7 +10,7 @@ import requests
 
 from sqlalchemy.orm import Session
 from src.database import SessionLocal
-from src.models import MailAccount, EmailAddress, ProcessedEmail, Customer, DraftQueue
+from src.models import MailAccount, EmailAddress, ProcessedEmail, Customer, DraftQueue, SystemSetting
 from src.utils.git_handler import GitHandler
 from src.utils.attachment_parser import AttachmentParser
 from src.utils.openai_client import OpenAIClient
@@ -158,12 +158,22 @@ class EmailWorker:
                 
                 # AI解析
                 try:
+                    # 書き出し文と署名を取得
+                    greeting_setting = db.query(SystemSetting).filter_by(key='greeting_template').first()
+                    greeting_template = greeting_setting.value if greeting_setting and greeting_setting.value else 'いつもお世話になっております。'
+                    
+                    signature_setting = db.query(SystemSetting).filter_by(key='signature_template').first()
+                    signature_template = signature_setting.value if signature_setting and signature_setting.value else ''
+                    
                     analysis = self.openai_client.analyze_email(
                         email_body=body,
                         subject=subject,
                         from_address=from_address,
                         attachments_text=attachment_texts,
-                        customer_name=customer.name
+                        customer_name=customer.name,
+                        salutation=email_record.salutation,
+                        greeting_template=greeting_template,
+                        signature_template=signature_template
                     )
                     
                     # Discordへ通知
