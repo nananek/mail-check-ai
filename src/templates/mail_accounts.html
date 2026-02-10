@@ -248,10 +248,8 @@ async function editAccount(accountId) {
 }
 
 async function toggleAccount(accountId, enabled) {
-    const response = await fetch(`/api/mail-accounts/${accountId}/toggle`, {
-        method: 'PATCH',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({enabled})
+    const response = await fetch(`/api/mail-accounts/${accountId}/toggle?enabled=${enabled}`, {
+        method: 'PATCH'
     });
     
     if (response.ok) {
