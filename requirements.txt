@@ -19,6 +19,8 @@ gitpython==3.1.41
 # AI & PDF Processing
 openai==1.10.0
 pymupdf==1.23.21
+pytesseract==0.3.10
+Pillow==10.2.0
 
 # Document Processing
 python-docx==1.1.0

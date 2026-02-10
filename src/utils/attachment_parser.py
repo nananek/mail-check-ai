@@ -2,8 +2,9 @@ import fitz  # PyMuPDF
 import io
 import csv
 import logging
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Optional
 from pathlib import Path
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
@@ -12,20 +13,99 @@ class AttachmentParser:
     """各種添付ファイルからテキストを抽出するクラス"""
     
     @staticmethod
-    def extract_pdf(pdf_bytes: bytes) -> str:
-        """PDFからテキスト抽出"""
+    def _try_ocr(image_bytes: bytes) -> Optional[str]:
+        """画像からOCRでテキストを抽出"""
+        try:
+            import pytesseract
+            from PIL import Image
+            
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # ページの向きを自動検出して回転
+            try:
+                osd = pytesseract.image_to_osd(image)
+                rotation = int([line for line in osd.split('\n') if 'Rotate' in line][0].split(':')[1].strip())
+                if rotation != 0:
+                    logger.info(f"Detected rotation: {rotation} degrees, rotating image")
+                    image = image.rotate(-rotation, expand=True)
+            except Exception as e:
+                logger.debug(f"Could not detect orientation, using image as-is: {e}")
+            
+            # OCR実行（日本語+英語）
+            text = pytesseract.image_to_string(image, lang='jpn+eng')
+            return text.strip()
+        
+        except ImportError:
+            logger.warning("pytesseract not installed, cannot perform OCR")
+            return None
+        except Exception as e:
+            logger.error(f"OCR failed: {e}")
+            return None
+    
+    @staticmethod
+    def extract_pdf(pdf_bytes: bytes, use_ocr: bool = True) -> str:
+        """
+        PDFからテキスト抽出（OCR対応）
+        
+        Args:
+            pdf_bytes: PDFファイルのバイナリデータ
+            use_ocr: テキストが少ない場合にOCRを使用するか
+        """
         try:
             doc = fitz.open(stream=pdf_bytes, filetype="pdf")
             text_parts = []
+            total_text_length = 0
+            page_images = []  # OCR用に画像を保存
             
             for page_num in range(len(doc)):
                 page = doc.load_page(page_num)
+                
+                # まず通常のテキスト抽出を試行
                 text = page.get_text()
+                text_length = len(text.strip())
+                total_text_length += text_length
+                
                 if text.strip():
                     text_parts.append(f"--- Page {page_num + 1} ---\n{text}")
+                    page_images.append(None)  # テキストがあればOCR不要
+                else:
+                    # テキストがない場合は画像として保存（後でOCR）
+                    page_images.append(page_num)
+            
+            doc_text = "\n\n".join([t for t in text_parts if t])
+            
+            # テキストがほとんどない（画像PDFの可能性）
+            if use_ocr and total_text_length < 100 and page_images:
+                logger.info(f"PDF has minimal text ({total_text_length} chars), attempting OCR on {len([p for p in page_images if p is not None])} pages")
+                
+                ocr_parts = []
+                doc = fitz.open(stream=pdf_bytes, filetype="pdf")  # 再度開く
+                
+                for page_num in range(len(doc)):
+                    if page_num in page_images:
+                        page = doc.load_page(page_num)
+                        
+                        # ページを画像に変換（高解像度でOCR精度向上）
+                        mat = fitz.Matrix(2.0, 2.0)  # 2倍にスケール
+                        pix = page.get_pixmap(matrix=mat)
+                        img_bytes = pix.tobytes("png")
+                        
+                        # OCR実行
+                        ocr_text = AttachmentParser._try_ocr(img_bytes)
+                        if ocr_text:
+                            ocr_parts.append(f"--- Page {page_num + 1} (OCR) ---\n{ocr_text}")
+                
+                doc.close()
+                
+                if ocr_parts:
+                    # OCRで取得したテキストを追加
+                    if doc_text:
+                        return doc_text + "\n\n=== OCRによる追加テキスト ===\n\n" + "\n\n".join(ocr_parts)
+                    else:
+                        return "\n\n".join(ocr_parts)
             
             doc.close()
-            return "\n\n".join(text_parts) if text_parts else "[PDFにテキストが見つかりません]"
+            return doc_text if doc_text else "[PDFにテキストが見つかりません（画像のみの可能性）]"
         
         except Exception as e:
             logger.error(f"Failed to extract PDF text: {e}")

@@ -7,6 +7,9 @@ RUN apt-get update && apt-get install -y \
     git \
     gcc \
     postgresql-client \
+    tesseract-ocr \
+    tesseract-ocr-jpn \
+    tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
