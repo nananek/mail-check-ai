@@ -44,7 +44,10 @@
                 </thead>
                 <tbody id="emailTableBody">
                     {% for email in emails %}
-                    <tr data-customer-id="{{ email.customer_id }}">
+                    <tr data-customer-id="{{ email.customer_id }}" 
+                        data-email="{{ email.email }}" 
+                        data-customer-name="{{ email.customer_name }}"
+                        data-salutation="{{ email.salutation or '' }}">
                         <td><strong>{{ email.email }}</strong></td>
                         <td><span class="badge bg-primary">{{ email.customer_name }}</span></td>
                         <td>
@@ -56,8 +59,11 @@
                         </td>
                         <td>{{ email.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
                         <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editEmailFromRow(this)">
+                                <i class="bi bi-pencil"></i>
+                            </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteEmail('{{ email.email }}')">
-                                <i class="bi bi-trash"></i> 削除
+                                <i class="bi bi-trash"></i>
                             </button>
                         </td>
                     </tr>
@@ -110,6 +116,46 @@
         </div>
     </div>
 </div>
+
+<!-- Edit Email Modal -->
+<div class="modal fade" id="editEmailModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editEmailForm">
+                <input type="hidden" name="old_email" id="edit_old_email">
+                <div class="modal-header">
+                    <h5 class="modal-title">メールアドレス編集</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">顧客 <span class="text-danger">*</span></label>
+                        <select class="form-select" name="customer_id" id="edit_customer_id" required>
+                            <option value="">選択してください</option>
+                            {% for customer in customers %}
+                            <option value="{{ customer.id }}">{{ customer.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">メールアドレス <span class="text-danger">*</span></label>
+                        <input type="email" class="form-control" name="email" id="edit_email" placeholder="customer@example.com" required>
+                        <small class="text-muted">このアドレスからのメールのみ処理されます</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">標準の宛名（オプション）</label>
+                        <input type="text" class="form-control" name="salutation" id="edit_salutation" placeholder="例: 株式会社ABC 伊呂波社長様">
+                        <small class="text-muted">本文に名前がない場合に使用される宛名です</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">更新</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
@@ -147,6 +193,42 @@ function filterByCustomer() {
             row.style.display = 'none';
         }
     });
+}
+
+// Handle edit email form submission
+document.getElementById('editEmailForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    
+    try {
+        const response = await fetch('/email-addresses/update', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.detail || 'メールアドレスの更新に失敗しました'));
+        }
+    } catch (error) {
+        alert('エラー: ' + error.message);
+    }
+});
+
+function editEmailFromRow(button) {
+    const row = button.closest('tr');
+    const email = row.dataset.email;
+    const customerId = row.dataset.customerId;
+    const salutation = row.dataset.salutation;
+    
+    document.getElementById('edit_old_email').value = email;
+    document.getElementById('edit_email').value = email;
+    document.getElementById('edit_customer_id').value = customerId;
+    document.getElementById('edit_salutation').value = salutation;
+    
+    new bootstrap.Modal(document.getElementById('editEmailModal')).show();
 }
 
 async function deleteEmail(email) {

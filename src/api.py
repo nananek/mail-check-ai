@@ -556,6 +556,49 @@ async def create_email_address(
     return RedirectResponse(url="/email-addresses", status_code=303)
 
 
+@app.post("/email-addresses/update")
+async def update_email_address(
+    old_email: str = Form(...),
+    email: str = Form(...),
+    customer_id: int = Form(...),
+    salutation: str = Form(None),
+    db: Session = Depends(get_db)
+):
+    """メールアドレスを更新"""
+    old_email = old_email.lower().strip()
+    new_email = email.lower().strip()
+    
+    # 既存のメールアドレスを取得
+    email_record = db.query(EmailAddress).filter_by(email=old_email).first()
+    if not email_record:
+        raise HTTPException(status_code=404, detail="Email address not found")
+    
+    # メールアドレスが変更された場合
+    if old_email != new_email:
+        # 新しいメールアドレスが既に存在しないかチェック
+        existing = db.query(EmailAddress).filter_by(email=new_email).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email address already exists")
+        
+        # 古いレコードを削除して新しいレコードを作成（主キーが変更されるため）
+        db.delete(email_record)
+        db.flush()
+        
+        new_record = EmailAddress(
+            email=new_email,
+            customer_id=customer_id,
+            salutation=salutation.strip() if salutation else None
+        )
+        db.add(new_record)
+    else:
+        # メールアドレスは同じで、顧客IDや宛名のみ変更
+        email_record.customer_id = customer_id
+        email_record.salutation = salutation.strip() if salutation else None
+    
+    db.commit()
+    return RedirectResponse(url="/email-addresses", status_code=303)
+
+
 @app.get("/mail-accounts", response_class=HTMLResponse)
 async def mail_accounts_page(request: Request, db: Session = Depends(get_db)):
     """メールアカウント管理画面"""
