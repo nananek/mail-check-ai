@@ -14,7 +14,7 @@
     <div class="card-body">
         <div class="row mb-3">
             <div class="col-md-6">
-                <select class="form-select" id="customerFilter" onchange="location.href='?customer_id=' + this.value + '&status=' + document.getElementById('statusFilter').value">
+                <select class="form-select" id="customerFilter" onchange="updateFilters()">
                     <option value="">全ての顧客</option>
                     {% for customer in customers %}
                     <option value="{{ customer.id }}" {% if selected_customer_id == customer.id %}selected{% endif %}>
@@ -24,7 +24,7 @@
                 </select>
             </div>
             <div class="col-md-6">
-                <select class="form-select" id="statusFilter" onchange="location.href='?customer_id=' + document.getElementById('customerFilter').value + '&status=' + this.value">
+                <select class="form-select" id="statusFilter" onchange="updateFilters()">
                     <option value="pending" {% if status == 'pending' %}selected{% endif %}>保留中</option>
                     <option value="sent" {% if status == 'sent' %}selected{% endif %}>送信済み</option>
                     <option value="archived" {% if status == 'archived' %}selected{% endif %}>アーカイブ</option>
@@ -105,6 +105,22 @@
 
 {% block extra_js %}
 <script>
+function updateFilters() {
+    const customerId = document.getElementById('customerFilter').value;
+    const status = document.getElementById('statusFilter').value;
+    
+    // Build URL with only non-empty parameters
+    const params = new URLSearchParams();
+    if (customerId) {
+        params.append('customer_id', customerId);
+    }
+    if (status) {
+        params.append('status', status);
+    }
+    
+    location.href = '?' + params.toString();
+}
+
 async function updateStatus(draftId, status) {
     const response = await fetch(`/api/drafts/${draftId}`, {
         method: 'PATCH',
