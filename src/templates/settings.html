@@ -13,10 +13,10 @@
         <form id="templateSettingsForm">
             <div class="mb-3">
                 <label class="form-label">書き出し文（挨拶）<span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="greeting_template" id="greeting_template" 
-                       value="{{ current_greeting }}" required 
-                       placeholder="例: いつもお世話になっております。ほげの会計 ほげのでございます。">
-                <small class="text-muted">AI生成の返信文の冒頭に追加されます</small>
+                <textarea class="form-control" name="greeting_template" id="greeting_template" 
+                          rows="3" required 
+                          placeholder="例:&#10;いつもお世話になっております。&#10;ほげの会計 ほげのでございます。">{{ current_greeting }}</textarea>
+                <small class="text-muted">AI生成の返信文の冒頭に追加されます（複数行可）</small>
             </div>
             <div class="mb-3">
                 <label class="form-label">標準の署名（オプション）</label>
@@ -50,19 +50,6 @@
                     <option value="Australia/Sydney" {% if current_timezone == 'Australia/Sydney' %}selected{% endif %}>Australia/Sydney (シドニー時間)</option>
                 </select>
                 <small class="text-muted">すべての日時表示に適用されます</small>
-            </div>
-            
-            <div class="mb-3">
-                <label class="form-label">書き出し文（挨拶）<span class="text-danger">*</span></label>
-                <input type="text" class="form-control" name="greeting_template" 
-                       value="{{ current_greeting }}" required>
-                <small class="text-muted">AI生成の返信文の冒頭に追加されます</small>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">標準の署名（オプション）</label>
-                <textarea class="form-control" name="signature_template" 
-                          rows="4">{{ current_signature }}</textarea>
-                <small class="text-muted">AI生成の返信文の末尾に追加されます（空欄可）</small>
             </div>
             
             <button type="submit" class="btn btn-primary">
@@ -101,7 +88,7 @@ document.getElementById('templateSettingsForm').addEventListener('submit', async
     e.preventDefault();
     const formData = new FormData(e.target);
     
-    // Add timezone from display settings form
+    // Add timezone from display settings
     formData.append('timezone', document.getElementById('timezone').value);
     
     try {
@@ -126,6 +113,10 @@ document.getElementById('templateSettingsForm').addEventListener('submit', async
 document.getElementById('displaySettingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
+    
+    // Add greeting and signature templates from template settings
+    formData.append('greeting_template', document.getElementById('greeting_template').value);
+    formData.append('signature_template', document.getElementById('signature_template').value);
     
     try {
         const response = await fetch('/settings', {
