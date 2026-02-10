@@ -617,8 +617,8 @@ async def update_mail_account(
 @app.get("/drafts", response_class=HTMLResponse)
 async def drafts_page(
     request: Request,
-    customer_id: int = None,
-    status: str = "pending",
+    customer_id: Optional[int] = Query(None),
+    status: str = Query("pending"),
     db: Session = Depends(get_db)
 ):
     """下書き管理画面"""
