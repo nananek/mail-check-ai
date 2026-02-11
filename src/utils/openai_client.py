@@ -2,9 +2,14 @@ from openai import OpenAI
 from typing import Dict, Any, Optional, List
 import json
 import logging
+from pathlib import Path
+from datetime import datetime
 from src.config import settings
 
 logger = logging.getLogger(__name__)
+
+# 使用量記録ファイル
+USAGE_LOG_FILE = Path("/tmp/openai_usage.jsonl")
 
 
 class OpenAIClient:
@@ -154,6 +159,9 @@ class OpenAIClient:
             result_text = response.choices[0].message.content
             result = json.loads(result_text)
             
+            # 使用量を記録
+            self._log_usage(response, from_address)
+            
             logger.info(f"Successfully analyzed email from {from_address}")
             return result
         
@@ -163,3 +171,52 @@ class OpenAIClient:
         except Exception as e:
             logger.error(f"OpenAI API error: {e}")
             raise
+    
+    def _log_usage(self, response, context: str = "") -> None:
+        """API使用量を記録"""
+        try:
+            usage = response.usage
+            if not usage:
+                return
+            
+            # モデルごとの料金（$/1M tokens）
+            pricing = {
+                "gpt-4o": {"input": 2.50, "output": 10.00},
+                "gpt-4o-mini": {"input": 0.150, "output": 0.600},
+                "gpt-4": {"input": 30.00, "output": 60.00},
+                "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+            }
+            
+            model = self.model
+            if model not in pricing:
+                # デフォルト料金（gpt-4o）
+                model_pricing = pricing["gpt-4o"]
+            else:
+                model_pricing = pricing[model]
+            
+            # コスト計算
+            input_cost = (usage.prompt_tokens / 1_000_000) * model_pricing["input"]
+            output_cost = (usage.completion_tokens / 1_000_000) * model_pricing["output"]
+            total_cost = input_cost + output_cost
+            
+            # 使用量ログを記録
+            log_entry = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "model": self.model,
+                "context": context,
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "input_cost_usd": round(input_cost, 6),
+                "output_cost_usd": round(output_cost, 6),
+                "total_cost_usd": round(total_cost, 6)
+            }
+            
+            # JSONLファイルに追記
+            with open(USAGE_LOG_FILE, "a") as f:
+                f.write(json.dumps(log_entry) + "\n")
+            
+            logger.debug(f"Logged usage: {usage.total_tokens} tokens, ${total_cost:.6f}")
+            
+        except Exception as e:
+            logger.warning(f"Failed to log API usage: {e}")

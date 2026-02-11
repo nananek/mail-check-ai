@@ -2,10 +2,10 @@
 import time
 import logging
 import requests
+import json
 from datetime import datetime
 from pathlib import Path
 from src.config import settings
-from src.utils.openai_usage_monitor import OpenAIUsageMonitor
 
 logging.basicConfig(
     level=logging.INFO,
@@ -15,15 +15,80 @@ logger = logging.getLogger(__name__)
 
 # 状態ファイル（最後の通知額を記録）
 STATE_FILE = Path("/tmp/openai_usage_state.txt")
+USAGE_LOG_FILE = Path("/tmp/openai_usage.jsonl")
 
 
 class UsageNotifier:
     """OpenAI使用量を監視して通知するクラス"""
     
     def __init__(self):
-        self.monitor = OpenAIUsageMonitor(settings.OPENAI_API_KEY)
         self.check_interval = 3600  # 1時間ごとにチェック
         self.notification_threshold = 1.0  # 1ドルごとに通知
+        
+    def get_total_usage(self) -> float:
+        """使用量ログファイルから合計コストを計算"""
+        if not USAGE_LOG_FILE.exists():
+            return 0.0
+        
+        total_cost = 0.0
+        try:
+            with open(USAGE_LOG_FILE, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        entry = json.loads(line)
+                        total_cost += entry.get('total_cost_usd', 0.0)
+            return total_cost
+        except Exception as e:
+            logger.error(f"Failed to read usage log: {e}")
+            return 0.0
+    
+    def get_usage_stats(self) -> dict:
+        """使用量統計を取得"""
+        if not USAGE_LOG_FILE.exists():
+            return {
+                "total_cost": 0.0,
+                "total_tokens": 0,
+                "call_count": 0,
+                "first_call": None,
+                "last_call": None
+            }
+        
+        total_cost = 0.0
+        total_tokens = 0
+        call_count = 0
+        first_call = None
+        last_call = None
+        
+        try:
+            with open(USAGE_LOG_FILE, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        entry = json.loads(line)
+                        total_cost += entry.get('total_cost_usd', 0.0)
+                        total_tokens += entry.get('total_tokens', 0)
+                        call_count += 1
+                        
+                        timestamp = entry.get('timestamp')
+                        if first_call is None:
+                            first_call = timestamp
+                        last_call = timestamp
+            
+            return {
+                "total_cost": total_cost,
+                "total_tokens": total_tokens,
+                "call_count": call_count,
+                "first_call": first_call,
+                "last_call": last_call
+            }
+        except Exception as e:
+            logger.error(f"Failed to read usage stats: {e}")
+            return {
+                "total_cost": 0.0,
+                "total_tokens": 0,
+                "call_count": 0,
+                "first_call": None,
+                "last_call": None
+            }
         
     def load_last_notified_amount(self) -> float:
         """最後に通知した金額を読み込む"""
@@ -65,11 +130,11 @@ class UsageNotifier:
     def check_and_notify(self) -> None:
         """使用量をチェックして必要なら通知"""
         try:
-            # 今月の使用量を取得
-            usage_data = self.monitor.get_usage()
-            current_usage = usage_data["total_usage"]
+            # 使用量統計を取得
+            stats = self.get_usage_stats()
+            current_usage = stats["total_cost"]
             
-            logger.info(f"Current OpenAI usage: ${current_usage:.2f}")
+            logger.info(f"Current OpenAI usage: ${current_usage:.4f} ({stats['call_count']} calls, {stats['total_tokens']} tokens)")
             
             # 最後の通知額を取得
             last_notified = self.load_last_notified_amount()
@@ -81,24 +146,22 @@ class UsageNotifier:
             if current_threshold_count > last_threshold_count:
                 # 通知が必要
                 message = (
-                    f"OpenAI APIの使用量が **${current_usage:.2f}** に達しました。\n\n"
-                    f"📊 今月の使用状況:\n"
-                    f"- 開始日: {usage_data['start_date']}\n"
-                    f"- 現在: ${current_usage:.2f}\n"
-                    f"- 前回通知: ${last_notified:.2f}"
+                    f"OpenAI APIの使用量が **${current_usage:.4f}** に達しました。\n\n"
+                    f"📊 統計:\n"
+                    f"- API呼び出し回数: {stats['call_count']}回\n"
+                    f"- 合計トークン数: {stats['total_tokens']:,}トークン\n"
+                    f"- 合計コスト: ${current_usage:.4f}\n"
+                    f"- 前回通知: ${last_notified:.4f}"
                 )
                 
-                # サブスクリプション情報も取得
-                try:
-                    sub_info = self.monitor.get_subscription_info()
-                    if sub_info.get("hard_limit_usd"):
-                        message += f"\n- 上限: ${sub_info['hard_limit_usd']:.2f}"
-                except:
-                    pass
+                if stats['first_call']:
+                    message += f"\n- 初回呼び出し: {stats['first_call'][:19]}"
+                if stats['last_call']:
+                    message += f"\n- 最終呼び出し: {stats['last_call'][:19]}"
                 
                 self.send_discord_notification(message)
                 self.save_last_notified_amount(current_usage)
-                logger.info(f"Notification sent: ${last_notified:.2f} -> ${current_usage:.2f}")
+                logger.info(f"Notification sent: ${last_notified:.4f} -> ${current_usage:.4f}")
             
         except Exception as e:
             logger.error(f"Error in check_and_notify: {e}")
