@@ -1,7 +1,9 @@
 import os
 import shutil
+import hashlib
 from pathlib import Path
 from typing import List, Tuple
+from datetime import datetime
 from git import Repo, GitCommandError
 from src.config import settings
 import logging
@@ -54,18 +56,38 @@ class GitHandler:
         subject: str,
         from_address: str,
         received_date: str
-    ) -> str:
+    ) -> Tuple[str, str]:
         """
         メールと添付ファイルをリポジトリに保存
         
         Returns:
-            コミットハッシュ
+            (コミットハッシュ, アーカイブディレクトリの相対パス)
         """
         repo = self.sync_repository()
         
-        # アーカイブディレクトリ構造: archive/YYYY-MM/message_id/
-        date_path = received_date[:7]  # YYYY-MM
-        archive_dir = self.local_path / "archive" / date_path / message_id.replace("<", "").replace(">", "").replace("/", "_")
+        # received_dateをパース
+        try:
+            # RFC 2822形式をパース
+            from email.utils import parsedate_to_datetime
+            dt = parsedate_to_datetime(received_date)
+        except:
+            # パース失敗時は現在時刻を使用
+            dt = datetime.utcnow()
+        
+        # アーカイブディレクトリ構造: archive/yyyy-mm-dd/hhmmss-subject-hash/
+        date_str = dt.strftime("%Y-%m-%d")
+        time_str = dt.strftime("%H%M%S")
+        
+        # サブジェクトとメッセージIDからハッシュを生成
+        hash_input = f"{subject}{message_id}".encode('utf-8')
+        hash_suffix = hashlib.md5(hash_input).hexdigest()[:8]
+        
+        # サブジェクトをファイル名に使える形式に変換（最大30文字）
+        safe_subject = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in subject)
+        safe_subject = safe_subject.strip()[:30].replace(' ', '-')
+        
+        dir_name = f"{time_str}-{safe_subject}-{hash_suffix}"
+        archive_dir = self.local_path / "archive" / date_str / dir_name
         archive_dir.mkdir(parents=True, exist_ok=True)
         
         # メール本文を保存
@@ -102,4 +124,6 @@ class GitHandler:
             logger.error(f"Failed to push to remote: {e}")
             raise
         
-        return commit.hexsha
+        # アーカイブディレクトリの相対パスを返す
+        archive_relative_path = str(archive_dir.relative_to(self.local_path))
+        return commit.hexsha, archive_relative_path

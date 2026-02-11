@@ -5,7 +5,7 @@ from email.utils import parseaddr
 import time
 import logging
 from datetime import datetime
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 import requests
 
 from sqlalchemy.orm import Session
@@ -141,9 +141,11 @@ class EmailWorker:
                 attachment_texts = AttachmentParser.extract_from_multiple(attachments)
                 
                 # Gitへ保存
+                commit_hash = None
+                archive_path = None
                 try:
                     git_handler = GitHandler(customer.repo_url, customer.gitea_token, customer.name)
-                    commit_hash = git_handler.save_email_archive(
+                    commit_hash, archive_path = git_handler.save_email_archive(
                         message_id=message_id,
                         email_content=body,
                         attachments=attachments,
@@ -151,7 +153,7 @@ class EmailWorker:
                         from_address=from_address,
                         received_date=received_date
                     )
-                    logger.info(f"Saved to Git: {commit_hash}")
+                    logger.info(f"Saved to Git: {commit_hash} at {archive_path}")
                 except Exception as e:
                     logger.error(f"Failed to save to Git: {e}")
                     # Git保存失敗時でも続行（処理済みとしてマーク）
@@ -187,13 +189,40 @@ class EmailWorker:
                             summary=analysis['summary']
                         )
                     
-                    # Gitea Issueを作成
-                    issue_url = self.create_gitea_issue(
+                    # 既存のissueを取得
+                    existing_issues = self.get_existing_issues(
                         repo_url=customer.repo_url,
-                        token=customer.gitea_token,
-                        title=analysis['issue_title'],
-                        body=analysis['issue_body']
+                        token=customer.gitea_token
                     )
+                    
+                    # 各トピックに対してIssueを作成
+                    topics = analysis.get('topics', [])
+                    issue_urls = []
+                    
+                    for topic in topics:
+                        topic_title = topic.get('title', '')
+                        topic_body = topic.get('body', '')
+                        
+                        # 関連issueを検索
+                        related_issues = self.find_related_issues(
+                            topic_title=topic_title,
+                            topic_body=topic_body,
+                            existing_issues=existing_issues
+                        )
+                        
+                        # Gitea Issueを作成
+                        issue_url = self.create_gitea_issue(
+                            repo_url=customer.repo_url,
+                            token=customer.gitea_token,
+                            title=topic_title,
+                            body=topic_body,
+                            commit_hash=commit_hash,
+                            archive_path=archive_path,
+                            related_issues=related_issues
+                        )
+                        
+                        if issue_url:
+                            issue_urls.append(issue_url)
                     
                     # 下書きキューに保存
                     draft = DraftQueue(
@@ -201,8 +230,8 @@ class EmailWorker:
                         message_id=message_id,
                         reply_draft=analysis['reply_draft'],
                         summary=analysis['summary'],
-                        issue_title=analysis['issue_title'],
-                        issue_url=issue_url,
+                        issue_title=f"{len(topics)}件のトピック処理完了" if len(topics) > 1 else topics[0].get('title', ''),
+                        issue_url=', '.join(issue_urls) if issue_urls else None,
                         status='pending'
                     )
                     db.add(draft)
@@ -255,12 +284,83 @@ class EmailWorker:
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
     
+    def get_existing_issues(
+        self,
+        repo_url: str,
+        token: str
+    ) -> List[Dict[str, Any]]:
+        """リポジトリの既存Issueを取得"""
+        try:
+            if repo_url.endswith('.git'):
+                repo_url = repo_url[:-4]
+            
+            parts = repo_url.replace('https://', '').replace('http://', '').split('/')
+            base_url = f"https://{parts[0]}"
+            owner = parts[1]
+            repo = parts[2]
+            
+            # オープンなissueを取得（最大100件）
+            api_url = f"{base_url}/api/v1/repos/{owner}/{repo}/issues"
+            
+            headers = {
+                "Authorization": f"token {token}",
+                "Content-Type": "application/json"
+            }
+            
+            params = {
+                "state": "open",
+                "page": 1,
+                "limit": 100
+            }
+            
+            response = requests.get(api_url, headers=headers, params=params, timeout=10)
+            response.raise_for_status()
+            
+            issues = response.json()
+            logger.info(f"Retrieved {len(issues)} existing issues")
+            return issues
+        
+        except Exception as e:
+            logger.error(f"Failed to get existing issues: {e}")
+            return []
+    
+    def find_related_issues(
+        self,
+        topic_title: str,
+        topic_body: str,
+        existing_issues: List[Dict[str, Any]]
+    ) -> List[str]:
+        """関連するissueを見つける（簡易的なキーワードマッチング）"""
+        related = []
+        
+        # トピックから重要なキーワードを抽出（簡易版）
+        keywords = set()
+        for word in topic_title.split():
+            if len(word) > 2:  # 3文字以上
+                keywords.add(word.lower())
+        
+        for issue in existing_issues:
+            issue_title = issue.get('title', '').lower()
+            issue_body = issue.get('body', '').lower()
+            
+            # キーワードがissueのタイトルまたは本文に含まれるかチェック
+            matches = sum(1 for kw in keywords if kw in issue_title or kw in issue_body)
+            
+            # 3つ以上のキーワードが一致したら関連とみなす
+            if matches >= min(3, len(keywords)):
+                related.append(issue.get('html_url', ''))
+        
+        return related[:5]  # 最大5件
+    
     def create_gitea_issue(
         self,
         repo_url: str,
         token: str,
         title: str,
-        body: str
+        body: str,
+        commit_hash: Optional[str] = None,
+        archive_path: Optional[str] = None,
+        related_issues: Optional[List[str]] = None
     ) -> Optional[str]:
         """Gitea Issueを作成"""
         try:
@@ -275,6 +375,21 @@ class EmailWorker:
             owner = parts[1]
             repo = parts[2]
             
+            # Issue本文にcommitリンクと関連issueを追加
+            enhanced_body = body
+            
+            if commit_hash and archive_path:
+                commit_url = f"{repo_url}/commit/{commit_hash}"
+                archive_url = f"{repo_url}/src/commit/{commit_hash}/{archive_path}"
+                enhanced_body += f"\n\n---\n\n**📎 メールアーカイブ:**\n"
+                enhanced_body += f"- [コミット]({commit_url})\n"
+                enhanced_body += f"- [アーカイブフォルダ]({archive_url})\n"
+            
+            if related_issues:
+                enhanced_body += f"\n\n**🔗 関連Issue:**\n"
+                for issue_url in related_issues:
+                    enhanced_body += f"- {issue_url}\n"
+            
             api_url = f"{base_url}/api/v1/repos/{owner}/{repo}/issues"
             
             headers = {
@@ -284,7 +399,7 @@ class EmailWorker:
             
             payload = {
                 "title": title,
-                "body": body
+                "body": enhanced_body
             }
             
             response = requests.post(api_url, json=payload, headers=headers, timeout=10)
