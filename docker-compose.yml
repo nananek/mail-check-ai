@@ -59,6 +59,21 @@ services:
     networks:
       - mail_network
 
+  usage_notifier:
+    # OpenAI使用量監視サービス
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
+    container_name: mail_check_usage_notifier
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL}
+    volumes:
+      - ./src:/app/src
+      - ./volumes/usage_state:/tmp
+    command: python -m src.usage_notifier
+    restart: unless-stopped
+    networks:
+      - mail_network
+
   api:
     # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
     image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
