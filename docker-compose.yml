@@ -87,21 +87,20 @@ services:
       SMTP_RELAY_AUTH_USERNAME: ${SMTP_RELAY_AUTH_USERNAME}
       SMTP_RELAY_AUTH_PASSWORD: ${SMTP_RELAY_AUTH_PASSWORD}
       SMTP_RELAY_USE_STARTTLS: ${SMTP_RELAY_USE_STARTTLS:-false}
+    network_mode: "service:tailscale"  # Tailscaleネットワークを共有
     volumes:
       - ./src:/app/src
       - ./alembic:/app/alembic
       - ./volumes/git_repos:/tmp/git_repos
       - ./volumes/postgres_socket:/var/run/postgresql
       - ./volumes/usage_state:/tmp
-    ports:
-      - "${SMTP_RELAY_PORT:-587}:${SMTP_RELAY_PORT:-587}"
     depends_on:
       db:
         condition: service_healthy
+      tailscale:
+        condition: service_started
     command: python -m src.smtp_relay
     restart: unless-stopped
-    networks:
-      - mail_network
 
   api:
     # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
