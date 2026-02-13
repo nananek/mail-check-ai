@@ -7,33 +7,6 @@
 
 <div class="card mb-4">
     <div class="card-header">
-        <h5 class="mb-0">メール返信テンプレート設定</h5>
-    </div>
-    <div class="card-body">
-        <form id="templateSettingsForm">
-            <div class="mb-3">
-                <label class="form-label">書き出し文（挨拶）<span class="text-danger">*</span></label>
-                <textarea class="form-control" name="greeting_template" id="greeting_template" 
-                          rows="3" required 
-                          placeholder="例:&#10;いつもお世話になっております。&#10;ほげの会計 ほげのでございます。">{{ current_greeting }}</textarea>
-                <small class="text-muted">AI生成の返信文の冒頭に追加されます（複数行可）</small>
-            </div>
-            <div class="mb-3">
-                <label class="form-label">標準の署名（オプション）</label>
-                <textarea class="form-control" name="signature_template" id="signature_template" 
-                          rows="4" placeholder="例:&#10;----------------&#10;株式会社ABC&#10;営業部 山田太郎&#10;電話: 03-1234-5678&#10;メール: yamada@example.com">{{ current_signature }}</textarea>
-                <small class="text-muted">AI生成の返信文の末尾に追加されます（空欄可）</small>
-            </div>
-            
-            <button type="submit" class="btn btn-primary">
-                <i class="bi bi-save"></i> 保存
-            </button>
-        </form>
-    </div>
-</div>
-
-<div class="card mb-4">
-    <div class="card-header">
         <h5 class="mb-0">表示設定</h5>
     </div>
     <div class="card-body">
@@ -51,7 +24,7 @@
                 </select>
                 <small class="text-muted">すべての日時表示に適用されます</small>
             </div>
-            
+
             <button type="submit" class="btn btn-primary">
                 <i class="bi bi-save"></i> 保存
             </button>
@@ -83,47 +56,11 @@
 
 {% block extra_js %}
 <script>
-// Template settings form
-document.getElementById('templateSettingsForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const formData = new FormData(e.target);
-    
-    // Add timezone from display settings
-    formData.append('timezone', document.getElementById('timezone').value);
-    
-    try {
-        const response = await fetch('/settings', {
-            method: 'POST',
-            body: formData
-        });
-        
-        if (response.ok) {
-            alert('テンプレート設定を保存しました');
-            location.reload();
-        } else {
-            const error = await response.json();
-            alert('エラー: ' + (error.detail || '設定の保存に失敗しました'));
-        }
-    } catch (error) {
-        alert('エラー: ' + error.message);
-    }
-});
-
-// Display settings form
 document.getElementById('displaySettingsForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    
-    // Add greeting and signature templates from template settings
-    formData.append('greeting_template', document.getElementById('greeting_template').value);
-    formData.append('signature_template', document.getElementById('signature_template').value);
-    
     try {
-        const response = await fetch('/settings', {
-            method: 'POST',
-            body: formData
-        });
-        
+        const response = await fetch('/settings', { method: 'POST', body: formData });
         if (response.ok) {
             alert('設定を保存しました');
             location.reload();

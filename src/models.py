@@ -19,7 +19,6 @@ class Customer(Base):
 
     # リレーションシップ
     email_addresses = relationship('EmailAddress', back_populates='customer', cascade='all, delete-orphan')
-    drafts = relationship('DraftQueue', back_populates='customer', cascade='all, delete-orphan')
     threads = relationship('ConversationThread', back_populates='customer', cascade='all, delete-orphan')
 
 
@@ -73,29 +72,6 @@ class ProcessedEmail(Base):
 
     __table_args__ = (
         Index('idx_processed_at', 'processed_at'),
-    )
-
-
-class DraftQueue(Base):
-    """返信下書きキューテーブル"""
-    __tablename__ = 'draft_queue'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
-    message_id = Column(String(512), nullable=False, comment='元メールのMessage-ID')
-    reply_draft = Column(Text, nullable=False, comment='AI生成の返信案')
-    summary = Column(Text, nullable=False, comment='メール要約')
-    issue_title = Column(String(500), nullable=True, comment='作成されたIssueのタイトル')
-    issue_url = Column(Text, nullable=True, comment='作成されたIssueのURL')
-    status = Column(String(50), default='pending', comment='pending / sent / archived')
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_at = Column(DateTime, nullable=True)
-    
-    # リレーションシップ
-    customer = relationship('Customer', back_populates='drafts')
-
-    __table_args__ = (
-        Index('idx_customer_status', 'customer_id', 'status'),
     )
 
 
