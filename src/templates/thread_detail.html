@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}スレッド詳細 - Mail Check AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-chat-left-text"></i> {{ thread.subject or '(件名なし)' }}</h2>
+    <a href="/threads" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> 一覧に戻る
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2">
+        <strong>顧客:</strong> {{ thread.customer_name }}
+        <span class="ms-3"><strong>メール数:</strong> {{ thread.emails|length }}通</span>
+    </div>
+</div>
+
+{% for email in thread.emails %}
+<div class="card mb-2 {% if email.direction == 'outgoing' %}border-start border-success border-3{% else %}border-start border-primary border-3{% endif %}">
+    <div class="card-header d-flex justify-content-between align-items-center py-2"
+         style="background-color: {% if email.direction == 'outgoing' %}#d1e7dd{% else %}#cfe2ff{% endif %}; color: #000;">
+        <div>
+            {% if email.direction == 'incoming' %}
+                <span class="badge bg-primary"><i class="bi bi-envelope"></i> 受信</span>
+            {% else %}
+                <span class="badge bg-success"><i class="bi bi-send"></i> 送信</span>
+            {% endif %}
+            <strong class="ms-2">{{ email.from_address }}</strong>
+            <i class="bi bi-arrow-right ms-1 me-1"></i>
+            <span>{{ email.to_addresses }}</span>
+        </div>
+        <small class="text-muted">{{ email.date|datetime_tz(timezone) }}</small>
+    </div>
+    <div class="card-body py-2">
+        <small class="text-muted">件名: {{ email.subject }}</small>
+        {% if email.summary %}
+        <p class="mb-1 mt-2"><strong>要約:</strong> {{ email.summary }}</p>
+        {% endif %}
+        {% if email.body_preview %}
+        <details class="mt-1">
+            <summary class="text-muted" style="cursor: pointer;">本文プレビュー</summary>
+            <pre class="mt-2 bg-light p-2 rounded" style="white-space: pre-wrap; font-family: inherit; font-size: 0.85em;">{{ email.body_preview }}</pre>
+        </details>
+        {% endif %}
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

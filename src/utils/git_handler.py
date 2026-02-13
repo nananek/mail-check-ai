@@ -55,16 +55,20 @@ class GitHandler:
         attachments: List[Tuple[str, bytes]],
         subject: str,
         from_address: str,
-        received_date: str
+        received_date: str,
+        direction: str = "received"
     ) -> Tuple[str, str]:
         """
         メールと添付ファイルをリポジトリに保存
-        
+
+        Args:
+            direction: "received" (受信) or "sent" (送信)
+
         Returns:
             (コミットハッシュ, アーカイブディレクトリの相対パス)
         """
         repo = self.sync_repository()
-        
+
         # received_dateをパース
         try:
             # RFC 2822形式をパース
@@ -73,48 +77,55 @@ class GitHandler:
         except:
             # パース失敗時は現在時刻を使用
             dt = datetime.utcnow()
-        
-        # アーカイブディレクトリ構造: archive/yyyy-mm-dd/hhmmss-subject-hash/
+
+        # アーカイブディレクトリ構造: archive/yyyy-mm-dd/hhmmss-{recv|sent}-subject-hash/
         date_str = dt.strftime("%Y-%m-%d")
         time_str = dt.strftime("%H%M%S")
-        
+
         # サブジェクトとメッセージIDからハッシュを生成
         hash_input = f"{subject}{message_id}".encode('utf-8')
         hash_suffix = hashlib.md5(hash_input).hexdigest()[:8]
-        
+
         # サブジェクトをファイル名に使える形式に変換（最大30文字）
         safe_subject = "".join(c if c.isalnum() or c in (' ', '-', '_') else '_' for c in subject)
         safe_subject = safe_subject.strip()[:30].replace(' ', '-')
-        
-        dir_name = f"{time_str}-{safe_subject}-{hash_suffix}"
+
+        dir_prefix = "sent" if direction == "sent" else "recv"
+        dir_name = f"{time_str}-{dir_prefix}-{safe_subject}-{hash_suffix}"
         archive_dir = self.local_path / "archive" / date_str / dir_name
         archive_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # メール本文を保存
         email_file = archive_dir / "email.txt"
         with open(email_file, "w", encoding="utf-8") as f:
-            f.write(f"From: {from_address}\n")
+            if direction == "sent":
+                f.write(f"To: {from_address}\n")
+            else:
+                f.write(f"From: {from_address}\n")
             f.write(f"Subject: {subject}\n")
             f.write(f"Date: {received_date}\n")
             f.write(f"Message-ID: {message_id}\n")
             f.write("\n" + "="*80 + "\n\n")
             f.write(email_content)
-        
+
         # 添付ファイルを保存
         for filename, content in attachments:
             attachment_path = archive_dir / filename
             with open(attachment_path, "wb") as f:
                 f.write(content)
-        
+
         # Git commit
         repo.index.add([str(archive_dir.relative_to(self.local_path))])
-        
-        commit_message = f"Add email: {subject}\n\nFrom: {from_address}\nDate: {received_date}"
+
+        if direction == "sent":
+            commit_message = f"Add sent email: {subject}\n\nTo: {from_address}\nDate: {received_date}"
+        else:
+            commit_message = f"Add email: {subject}\n\nFrom: {from_address}\nDate: {received_date}"
         repo.config_writer().set_value("user", "name", settings.GIT_AUTHOR_NAME).release()
         repo.config_writer().set_value("user", "email", settings.GIT_AUTHOR_EMAIL).release()
-        
+
         commit = repo.index.commit(commit_message)
-        
+
         # Push to remote
         try:
             origin = repo.remotes.origin
@@ -123,7 +134,7 @@ class GitHandler:
         except GitCommandError as e:
             logger.error(f"Failed to push to remote: {e}")
             raise
-        
+
         # アーカイブディレクトリの相対パスを返す
         archive_relative_path = str(archive_dir.relative_to(self.local_path))
         return commit.hexsha, archive_relative_path

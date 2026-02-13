@@ -44,6 +44,12 @@
                     <a class="nav-link {% if request.url.path == '/drafts' %}active{% endif %}" href="/drafts">
                         <i class="bi bi-file-earmark-text"></i> 下書き管理
                     </a>
+                    <a class="nav-link {% if '/threads' in request.url.path %}active{% endif %}" href="/threads">
+                        <i class="bi bi-chat-left-text"></i> 会話スレッド
+                    </a>
+                    <a class="nav-link {% if '/smtp-relay' in request.url.path %}active{% endif %}" href="/smtp-relay">
+                        <i class="bi bi-send"></i> SMTP中継
+                    </a>
                     <hr>
                     <a class="nav-link {% if request.url.path == '/settings' %}active{% endif %}" href="/settings">
                         <i class="bi bi-gear"></i> 設定

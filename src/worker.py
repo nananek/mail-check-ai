@@ -14,6 +14,7 @@ from src.models import MailAccount, EmailAddress, ProcessedEmail, Customer, Draf
 from src.utils.git_handler import GitHandler
 from src.utils.attachment_parser import AttachmentParser
 from src.utils.openai_client import OpenAIClient
+from src.utils.thread_manager import ThreadManager
 from src.config import settings
 
 logging.basicConfig(
@@ -130,16 +131,28 @@ class EmailWorker:
                 # 顧客情報を取得
                 customer = email_record.customer
                 logger.info(f"Processing email for customer: {customer.name}")
-                
+
                 # メール情報を抽出
                 subject = self.decode_mime_words(msg.get('Subject', ''))
                 body = self.extract_email_body(msg)
                 attachments = self.extract_attachments(msg)
                 received_date = msg.get('Date', datetime.utcnow().isoformat())
-                
+
+                # スレッド用ヘッダ抽出
+                in_reply_to = msg.get('In-Reply-To')
+                references_header = msg.get('References')
+                to_header = msg.get('To', '')
+                cc_header = msg.get('Cc', '')
+
+                # スレッド管理
+                thread = ThreadManager.get_or_create_thread(
+                    db, customer.id, message_id, in_reply_to, references_header, subject
+                )
+                thread_context = ThreadManager.get_thread_context(db, thread.id)
+
                 # 全添付ファイルからテキスト抽出
                 attachment_texts = AttachmentParser.extract_from_multiple(attachments)
-                
+
                 # Gitへ保存
                 commit_hash = None
                 archive_path = None
@@ -151,22 +164,22 @@ class EmailWorker:
                         attachments=attachments,
                         subject=subject,
                         from_address=from_address,
-                        received_date=received_date
+                        received_date=received_date,
+                        direction="received"
                     )
                     logger.info(f"Saved to Git: {commit_hash} at {archive_path}")
                 except Exception as e:
                     logger.error(f"Failed to save to Git: {e}")
-                    # Git保存失敗時でも続行（処理済みとしてマーク）
-                
+
                 # AI解析
                 try:
                     # 書き出し文と署名を取得
                     greeting_setting = db.query(SystemSetting).filter_by(key='greeting_template').first()
                     greeting_template = greeting_setting.value if greeting_setting and greeting_setting.value else 'いつもお世話になっております。'
-                    
+
                     signature_setting = db.query(SystemSetting).filter_by(key='signature_template').first()
                     signature_template = signature_setting.value if signature_setting and signature_setting.value else ''
-                    
+
                     analysis = self.openai_client.analyze_email(
                         email_body=body,
                         subject=subject,
@@ -175,7 +188,8 @@ class EmailWorker:
                         customer_name=customer.name,
                         salutation=email_record.salutation,
                         greeting_template=greeting_template,
-                        signature_template=signature_template
+                        signature_template=signature_template,
+                        thread_context=thread_context
                     )
                     
                     # Discordへ通知
@@ -236,15 +250,37 @@ class EmailWorker:
                     )
                     db.add(draft)
                     
+                    # スレッドにメール追加
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        email_date = parsedate_to_datetime(received_date)
+                    except:
+                        email_date = datetime.utcnow()
+
+                    ThreadManager.add_email_to_thread(
+                        db, thread, message_id, in_reply_to, references_header,
+                        direction='incoming',
+                        from_address=from_address,
+                        to_addresses=to_header,
+                        cc_addresses=cc_header,
+                        subject=subject,
+                        body_preview=body,
+                        summary=analysis.get('summary', ''),
+                        date=email_date
+                    )
+
                 except Exception as e:
                     logger.error(f"Failed to analyze email: {e}")
-                
+
                 # 処理済みとしてマーク
                 db.add(ProcessedEmail(
                     message_id=message_id,
                     customer_id=customer.id,
                     from_address=from_address,
                     subject=subject,
+                    direction='incoming',
+                    to_addresses=to_header,
+                    thread_id=thread.id,
                     processed_at=datetime.utcnow()
                 ))
                 db.commit()

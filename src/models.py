@@ -16,10 +16,11 @@ class Customer(Base):
     gitea_token = Column(String(255), nullable=False, comment='Gitea API トークン')
     discord_webhook = Column(Text, nullable=True, comment='顧客専用Discord Webhook URL（オプション）')
     created_at = Column(DateTime, default=datetime.utcnow)
-    
+
     # リレーションシップ
     email_addresses = relationship('EmailAddress', back_populates='customer', cascade='all, delete-orphan')
     drafts = relationship('DraftQueue', back_populates='customer', cascade='all, delete-orphan')
+    threads = relationship('ConversationThread', back_populates='customer', cascade='all, delete-orphan')
 
 
 class EmailAddress(Base):
@@ -65,6 +66,9 @@ class ProcessedEmail(Base):
     customer_id = Column(Integer, ForeignKey('customers.id', ondelete='SET NULL'), nullable=True)
     from_address = Column(String(255), nullable=True)
     subject = Column(Text, nullable=True)
+    direction = Column(String(10), default='incoming', comment='incoming / outgoing')
+    to_addresses = Column(Text, nullable=True, comment='宛先アドレス')
+    thread_id = Column(Integer, ForeignKey('conversation_threads.id', ondelete='SET NULL'), nullable=True)
     processed_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (
@@ -102,3 +106,72 @@ class SystemSetting(Base):
     key = Column(String(255), primary_key=True, comment='設定キー')
     value = Column(Text, nullable=True, comment='設定値')
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class ConversationThread(Base):
+    """会話スレッドテーブル"""
+    __tablename__ = 'conversation_threads'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    customer_id = Column(Integer, ForeignKey('customers.id', ondelete='CASCADE'), nullable=False)
+    subject = Column(Text, nullable=True, comment='正規化された件名 (Re:/Fwd: 除去)')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    customer = relationship('Customer', back_populates='threads')
+    emails = relationship('ThreadEmail', back_populates='thread',
+                          order_by='ThreadEmail.date', cascade='all, delete-orphan')
+
+    __table_args__ = (
+        Index('idx_thread_customer', 'customer_id'),
+        Index('idx_thread_updated', 'updated_at'),
+    )
+
+
+class ThreadEmail(Base):
+    """スレッド内メールテーブル"""
+    __tablename__ = 'thread_emails'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(Integer, ForeignKey('conversation_threads.id', ondelete='CASCADE'), nullable=False)
+    message_id = Column(String(512), nullable=False, unique=True, comment='Message-ID ヘッダー')
+    in_reply_to = Column(String(512), nullable=True, comment='In-Reply-To ヘッダー')
+    references = Column(Text, nullable=True, comment='References ヘッダー (space-separated)')
+    direction = Column(String(10), nullable=False, comment='incoming / outgoing')
+    from_address = Column(String(255), nullable=False)
+    to_addresses = Column(Text, nullable=False, comment='カンマ区切りの宛先')
+    cc_addresses = Column(Text, nullable=True, comment='カンマ区切りのCC')
+    subject = Column(Text, nullable=True)
+    body_preview = Column(Text, nullable=True, comment='本文の先頭500文字')
+    summary = Column(Text, nullable=True, comment='AI生成要約')
+    date = Column(DateTime, nullable=False, comment='メールのDateヘッダー')
+    processed_at = Column(DateTime, default=datetime.utcnow)
+
+    thread = relationship('ConversationThread', back_populates='emails')
+
+    __table_args__ = (
+        Index('idx_thread_email_message_id', 'message_id'),
+        Index('idx_thread_email_thread', 'thread_id'),
+        Index('idx_thread_email_in_reply_to', 'in_reply_to'),
+        Index('idx_thread_email_direction', 'direction'),
+    )
+
+
+class SmtpRelayConfig(Base):
+    """SMTP中継設定テーブル"""
+    __tablename__ = 'smtp_relay_config'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False, comment='設定名')
+    host = Column(String(255), nullable=False, comment='送信先SMTPホスト')
+    port = Column(Integer, nullable=False, default=587, comment='送信先SMTPポート')
+    username = Column(String(255), nullable=False, comment='SMTP認証ユーザー名')
+    password = Column(String(255), nullable=False, comment='SMTP認証パスワード')
+    use_tls = Column(Boolean, default=True, comment='STARTTLS使用フラグ')
+    use_ssl = Column(Boolean, default=False, comment='SSL/TLS使用フラグ')
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index('idx_smtp_relay_enabled', 'enabled'),
+    )

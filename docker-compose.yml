@@ -74,6 +74,35 @@ services:
     networks:
       - mail_network
 
+  smtp_relay:
+    image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest
+    container_name: mail_check_smtp_relay
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mailuser}:${POSTGRES_PASSWORD:-changeme}@/mail_check?host=/var/run/postgresql
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      SMTP_RELAY_ENABLED: ${SMTP_RELAY_ENABLED:-false}
+      SMTP_RELAY_HOST: "0.0.0.0"
+      SMTP_RELAY_PORT: ${SMTP_RELAY_PORT:-587}
+      SMTP_RELAY_AUTH_USERNAME: ${SMTP_RELAY_AUTH_USERNAME}
+      SMTP_RELAY_AUTH_PASSWORD: ${SMTP_RELAY_AUTH_PASSWORD}
+      SMTP_RELAY_USE_STARTTLS: ${SMTP_RELAY_USE_STARTTLS:-false}
+    volumes:
+      - ./src:/app/src
+      - ./alembic:/app/alembic
+      - ./volumes/git_repos:/tmp/git_repos
+      - ./volumes/postgres_socket:/var/run/postgresql
+      - ./volumes/usage_state:/tmp
+    ports:
+      - "${SMTP_RELAY_PORT:-587}:${SMTP_RELAY_PORT:-587}"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m src.smtp_relay
+    restart: unless-stopped
+    networks:
+      - mail_network
+
   api:
     # GHCRイメージを使用（ローカルビルドする場合は下のbuildセクションのコメントを外す）
     image: ghcr.io/${GITHUB_REPOSITORY:-yourname/mail-check-ai}:latest

@@ -40,6 +40,33 @@
     </div>
 </div>
 
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card border-secondary">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-chat-left-text"></i> 会話スレッド</h5>
+                <h2>{{ stats.thread_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-primary">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-envelope"></i> 受信処理済み</h5>
+                <h2>{{ stats.incoming_count }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-success">
+            <div class="card-body">
+                <h5 class="card-title"><i class="bi bi-send"></i> 送信処理済み</h5>
+                <h2>{{ stats.outgoing_count }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-md-6">
         <div class="card">

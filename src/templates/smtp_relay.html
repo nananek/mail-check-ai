@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+
+{% block title %}SMTP中継設定 - Mail Check AI{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-send"></i> SMTP中継設定</h2>
+    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRelayModal">
+        <i class="bi bi-plus-circle"></i> 転送先追加
+    </button>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">SMTPリレーサーバーステータス</h5>
+    </div>
+    <div class="card-body">
+        <p><strong>有効:</strong>
+            {% if smtp_relay_enabled %}
+            <span class="badge bg-success">有効</span>
+            {% else %}
+            <span class="badge bg-secondary">無効</span>
+            {% endif %}
+        </p>
+        <p><strong>ポート:</strong> {{ smtp_relay_port }}</p>
+        <p class="mb-0"><strong>認証:</strong>
+            {% if smtp_relay_auth %}
+            <span class="badge bg-success">あり</span>
+            {% else %}
+            <span class="badge bg-warning">なし</span>
+            {% endif %}
+        </p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">転送先SMTPサーバー一覧</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>設定名</th>
+                        <th>サーバー</th>
+                        <th>ポート</th>
+                        <th>ユーザー名</th>
+                        <th>TLS</th>
+                        <th>状態</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for config in configs %}
+                    <tr>
+                        <td>{{ config.id }}</td>
+                        <td><strong>{{ config.name }}</strong></td>
+                        <td>{{ config.host }}</td>
+                        <td>{{ config.port }}</td>
+                        <td><code>{{ config.username }}</code></td>
+                        <td>
+                            {% if config.use_ssl %}
+                            <span class="badge bg-success">SSL</span>
+                            {% elif config.use_tls %}
+                            <span class="badge bg-info">STARTTLS</span>
+                            {% else %}
+                            <span class="badge bg-warning">なし</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if config.enabled %}
+                            <span class="badge bg-success">有効</span>
+                            {% else %}
+                            <span class="badge bg-secondary">無効</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" onclick="editRelay({{ config.id }})">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger" onclick="deleteRelay({{ config.id }}, '{{ config.name }}')">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted">転送先SMTPサーバーが登録されていません</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Relay Modal -->
+<div class="modal fade" id="addRelayModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="addRelayForm">
+                <div class="modal-header">
+                    <h5 class="modal-title">転送先SMTPサーバー追加</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">設定名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" placeholder="本番SMTPサーバー" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="host" placeholder="smtp.example.com" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ポート番号 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" name="port" value="587" required>
+                        <small class="text-muted">STARTTLS: 587, SSL: 465</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">パスワード <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="password" required>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_tls" id="add_use_tls" checked>
+                        <label class="form-check-label" for="add_use_tls">STARTTLSを使用する</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_ssl" id="add_use_ssl">
+                        <label class="form-check-label" for="add_use_ssl">SSL/TLSを使用する</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="enabled" id="add_enabled" checked>
+                        <label class="form-check-label" for="add_enabled">有効にする</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">追加</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Relay Modal -->
+<div class="modal fade" id="editRelayModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form id="editRelayForm">
+                <input type="hidden" name="config_id" id="edit_config_id">
+                <div class="modal-header">
+                    <h5 class="modal-title">転送先SMTPサーバー編集</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">設定名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="name" id="edit_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="host" id="edit_host" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ポート番号 <span class="text-danger">*</span></label>
+                        <input type="number" class="form-control" name="port" id="edit_port" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="username" id="edit_username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">パスワード</label>
+                        <input type="password" class="form-control" name="password" id="edit_password" placeholder="変更する場合のみ入力">
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_tls" id="edit_use_tls">
+                        <label class="form-check-label" for="edit_use_tls">STARTTLSを使用する</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="use_ssl" id="edit_use_ssl">
+                        <label class="form-check-label" for="edit_use_ssl">SSL/TLSを使用する</label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" name="enabled" id="edit_enabled">
+                        <label class="form-check-label" for="edit_enabled">有効にする</label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
+                    <button type="submit" class="btn btn-primary">更新</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('addRelayForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    try {
+        const response = await fetch('/smtp-relay', { method: 'POST', body: formData });
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.detail || 'Failed to add'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+
+document.getElementById('editRelayForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    try {
+        const response = await fetch('/smtp-relay/update', { method: 'POST', body: formData });
+        if (response.ok) {
+            location.reload();
+        } else {
+            const error = await response.json();
+            alert('Error: ' + (error.detail || 'Failed to update'));
+        }
+    } catch (error) {
+        alert('Error: ' + error.message);
+    }
+});
+
+async function editRelay(configId) {
+    const response = await fetch(`/api/smtp-relay/${configId}`);
+    const config = await response.json();
+    document.getElementById('edit_config_id').value = config.id;
+    document.getElementById('edit_name').value = config.name;
+    document.getElementById('edit_host').value = config.host;
+    document.getElementById('edit_port').value = config.port;
+    document.getElementById('edit_username').value = config.username;
+    document.getElementById('edit_use_tls').checked = config.use_tls;
+    document.getElementById('edit_use_ssl').checked = config.use_ssl;
+    document.getElementById('edit_enabled').checked = config.enabled;
+    new bootstrap.Modal(document.getElementById('editRelayModal')).show();
+}
+
+async function deleteRelay(configId, name) {
+    if (!confirm(`転送先「${name}」を削除してもよろしいですか？`)) return;
+    const response = await fetch(`/api/smtp-relay/${configId}`, { method: 'DELETE' });
+    if (response.ok) {
+        location.reload();
+    } else {
+        alert('削除に失敗しました');
+    }
+}
+</script>
+{% endblock %}

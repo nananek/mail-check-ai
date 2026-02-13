@@ -10,7 +10,10 @@ import os
 import pytz
 
 from src.database import get_db
-from src.models import DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail, SystemSetting
+from src.models import (
+    DraftQueue, Customer, EmailAddress, MailAccount, ProcessedEmail, SystemSetting,
+    ConversationThread, ThreadEmail, SmtpRelayConfig
+)
 from src.config import settings
 
 app = FastAPI(
@@ -141,7 +144,10 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
         "email_count": db.query(EmailAddress).count(),
         "active_accounts": db.query(MailAccount).filter_by(enabled=True).count(),
         "pending_drafts": db.query(DraftQueue).filter_by(status="pending").count(),
-        "poll_interval": os.getenv("POLL_INTERVAL", "60")
+        "poll_interval": os.getenv("POLL_INTERVAL", "60"),
+        "thread_count": db.query(ConversationThread).count(),
+        "incoming_count": db.query(ProcessedEmail).filter_by(direction='incoming').count(),
+        "outgoing_count": db.query(ProcessedEmail).filter_by(direction='outgoing').count(),
     }
     
     recent_emails = db.query(ProcessedEmail).order_by(
@@ -975,6 +981,255 @@ def get_draft_text(
     if not draft:
         raise HTTPException(status_code=404, detail="Draft not found")
     return {"reply_draft": draft.reply_draft}
+
+
+# ========== Thread Routes ==========
+
+@app.get("/threads", response_class=HTMLResponse)
+async def threads_page(
+    request: Request,
+    customer_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """会話スレッド一覧画面"""
+    tz = get_system_timezone(db)
+    customers = db.query(Customer).all()
+
+    query = db.query(ConversationThread)
+    if customer_id:
+        query = query.filter_by(customer_id=customer_id)
+
+    threads_raw = query.order_by(ConversationThread.updated_at.desc()).limit(50).all()
+
+    threads_data = []
+    for t in threads_raw:
+        latest_email = db.query(ThreadEmail).filter_by(
+            thread_id=t.id
+        ).order_by(ThreadEmail.date.desc()).first()
+
+        threads_data.append({
+            "id": t.id,
+            "subject": t.subject,
+            "customer_name": t.customer.name,
+            "email_count": db.query(ThreadEmail).filter_by(thread_id=t.id).count(),
+            "updated_at": t.updated_at,
+            "latest_direction": latest_email.direction if latest_email else None,
+            "latest_summary": latest_email.summary if latest_email else None
+        })
+
+    return templates.TemplateResponse("threads.html", {
+        "request": request,
+        "customers": customers,
+        "threads": threads_data,
+        "selected_customer_id": customer_id,
+        "timezone": tz
+    })
+
+
+@app.get("/threads/{thread_id}", response_class=HTMLResponse)
+async def thread_detail_page(
+    request: Request,
+    thread_id: int = Path(...),
+    db: Session = Depends(get_db)
+):
+    """スレッド詳細画面"""
+    tz = get_system_timezone(db)
+
+    thread = db.query(ConversationThread).filter_by(id=thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    emails = db.query(ThreadEmail).filter_by(
+        thread_id=thread_id
+    ).order_by(ThreadEmail.date.asc()).all()
+
+    return templates.TemplateResponse("thread_detail.html", {
+        "request": request,
+        "thread": {
+            "id": thread.id,
+            "subject": thread.subject,
+            "customer_name": thread.customer.name,
+            "emails": emails
+        },
+        "timezone": tz
+    })
+
+
+@app.get(
+    "/api/threads",
+    tags=["Threads"],
+    summary="スレッド一覧を取得"
+)
+def api_list_threads(
+    customer_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """会話スレッド一覧を取得"""
+    query = db.query(ConversationThread)
+    if customer_id:
+        query = query.filter_by(customer_id=customer_id)
+    threads = query.order_by(ConversationThread.updated_at.desc()).limit(50).all()
+    return [
+        {
+            "id": t.id,
+            "customer_id": t.customer_id,
+            "subject": t.subject,
+            "email_count": len(t.emails),
+            "updated_at": t.updated_at.isoformat()
+        }
+        for t in threads
+    ]
+
+
+@app.get(
+    "/api/threads/{thread_id}",
+    tags=["Threads"],
+    summary="スレッド詳細を取得"
+)
+def api_get_thread(
+    thread_id: int = Path(...),
+    db: Session = Depends(get_db)
+):
+    """スレッド内のメール一覧を含む詳細情報を取得"""
+    thread = db.query(ConversationThread).filter_by(id=thread_id).first()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    emails = db.query(ThreadEmail).filter_by(
+        thread_id=thread_id
+    ).order_by(ThreadEmail.date.asc()).all()
+
+    return {
+        "id": thread.id,
+        "subject": thread.subject,
+        "customer_id": thread.customer_id,
+        "emails": [
+            {
+                "id": e.id,
+                "message_id": e.message_id,
+                "direction": e.direction,
+                "from_address": e.from_address,
+                "to_addresses": e.to_addresses,
+                "subject": e.subject,
+                "body_preview": e.body_preview,
+                "summary": e.summary,
+                "date": e.date.isoformat()
+            }
+            for e in emails
+        ]
+    }
+
+
+# ========== SMTP Relay Config Routes ==========
+
+@app.get("/smtp-relay", response_class=HTMLResponse)
+async def smtp_relay_page(request: Request, db: Session = Depends(get_db)):
+    """SMTP中継設定画面"""
+    configs = db.query(SmtpRelayConfig).all()
+    return templates.TemplateResponse("smtp_relay.html", {
+        "request": request,
+        "configs": configs,
+        "smtp_relay_enabled": settings.SMTP_RELAY_ENABLED,
+        "smtp_relay_port": settings.SMTP_RELAY_PORT,
+        "smtp_relay_auth": bool(settings.SMTP_RELAY_AUTH_USERNAME)
+    })
+
+
+@app.post("/smtp-relay")
+async def create_smtp_relay_config(
+    name: str = Form(...),
+    host: str = Form(...),
+    port: int = Form(587),
+    username: str = Form(...),
+    password: str = Form(...),
+    use_tls: bool = Form(False),
+    use_ssl: bool = Form(False),
+    enabled: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """転送先SMTP設定を追加"""
+    config = SmtpRelayConfig(
+        name=name, host=host, port=port,
+        username=username, password=password,
+        use_tls=use_tls, use_ssl=use_ssl, enabled=enabled
+    )
+    db.add(config)
+    db.commit()
+    return RedirectResponse(url="/smtp-relay", status_code=303)
+
+
+@app.post("/smtp-relay/update")
+async def update_smtp_relay_config(
+    config_id: int = Form(...),
+    name: str = Form(...),
+    host: str = Form(...),
+    port: int = Form(587),
+    username: str = Form(...),
+    password: str = Form(None),
+    use_tls: bool = Form(False),
+    use_ssl: bool = Form(False),
+    enabled: bool = Form(False),
+    db: Session = Depends(get_db)
+):
+    """転送先SMTP設定を更新"""
+    config = db.query(SmtpRelayConfig).filter_by(id=config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Config not found")
+
+    config.name = name
+    config.host = host
+    config.port = port
+    config.username = username
+    if password:
+        config.password = password
+    config.use_tls = use_tls
+    config.use_ssl = use_ssl
+    config.enabled = enabled
+    db.commit()
+    return RedirectResponse(url="/smtp-relay", status_code=303)
+
+
+@app.get(
+    "/api/smtp-relay/{config_id}",
+    tags=["SMTP Relay"],
+    summary="SMTP中継設定を取得"
+)
+def get_smtp_relay_config(
+    config_id: int = Path(...),
+    db: Session = Depends(get_db)
+):
+    """SMTP中継設定の詳細を取得（パスワードは含まない）"""
+    config = db.query(SmtpRelayConfig).filter_by(id=config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Config not found")
+    return {
+        "id": config.id,
+        "name": config.name,
+        "host": config.host,
+        "port": config.port,
+        "username": config.username,
+        "use_tls": config.use_tls,
+        "use_ssl": config.use_ssl,
+        "enabled": config.enabled
+    }
+
+
+@app.delete(
+    "/api/smtp-relay/{config_id}",
+    tags=["SMTP Relay"],
+    summary="SMTP中継設定を削除"
+)
+def delete_smtp_relay_config(
+    config_id: int = Path(...),
+    db: Session = Depends(get_db)
+):
+    """SMTP中継設定を削除"""
+    config = db.query(SmtpRelayConfig).filter_by(id=config_id).first()
+    if not config:
+        raise HTTPException(status_code=404, detail="Config not found")
+    db.delete(config)
+    db.commit()
+    return {"status": "success", "message": "Config deleted"}
 
 
 if __name__ == "__main__":
