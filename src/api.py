@@ -800,14 +800,15 @@ async def smtp_relay_page(request: Request, db: Session = Depends(get_db)):
         "request": request,
         "configs": configs,
         "smtp_relay_enabled": settings.SMTP_RELAY_ENABLED,
-        "smtp_relay_port": settings.SMTP_RELAY_PORT,
-        "smtp_relay_auth": bool(settings.SMTP_RELAY_AUTH_USERNAME)
+        "smtp_relay_port": settings.SMTP_RELAY_PORT
     })
 
 
 @app.post("/smtp-relay")
 async def create_smtp_relay_config(
     name: str = Form(...),
+    relay_username: str = Form(...),
+    relay_password: str = Form(...),
     host: str = Form(...),
     port: int = Form(587),
     username: str = Form(...),
@@ -818,8 +819,12 @@ async def create_smtp_relay_config(
     db: Session = Depends(get_db)
 ):
     """転送先SMTP設定を追加"""
+    existing = db.query(SmtpRelayConfig).filter_by(relay_username=relay_username).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="このリレーユーザー名は既に使用されています")
     config = SmtpRelayConfig(
-        name=name, host=host, port=port,
+        name=name, relay_username=relay_username, relay_password=relay_password,
+        host=host, port=port,
         username=username, password=password,
         use_tls=use_tls, use_ssl=use_ssl, enabled=enabled
     )
@@ -832,6 +837,8 @@ async def create_smtp_relay_config(
 async def update_smtp_relay_config(
     config_id: int = Form(...),
     name: str = Form(...),
+    relay_username: str = Form(...),
+    relay_password: str = Form(None),
     host: str = Form(...),
     port: int = Form(587),
     username: str = Form(...),
@@ -846,7 +853,18 @@ async def update_smtp_relay_config(
     if not config:
         raise HTTPException(status_code=404, detail="Config not found")
 
+    # relay_usernameの重複チェック（自分自身を除く）
+    existing = db.query(SmtpRelayConfig).filter(
+        SmtpRelayConfig.relay_username == relay_username,
+        SmtpRelayConfig.id != config_id
+    ).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="このリレーユーザー名は既に使用されています")
+
     config.name = name
+    config.relay_username = relay_username
+    if relay_password:
+        config.relay_password = relay_password
     config.host = host
     config.port = port
     config.username = username
@@ -875,6 +893,7 @@ def get_smtp_relay_config(
     return {
         "id": config.id,
         "name": config.name,
+        "relay_username": config.relay_username,
         "host": config.host,
         "port": config.port,
         "username": config.username,

@@ -24,11 +24,7 @@
         </p>
         <p><strong>ポート:</strong> {{ smtp_relay_port }}</p>
         <p class="mb-0"><strong>認証:</strong>
-            {% if smtp_relay_auth %}
-            <span class="badge bg-success">あり</span>
-            {% else %}
-            <span class="badge bg-warning">なし</span>
-            {% endif %}
+            <span class="badge bg-success">DB認証（設定ごとのログイン）</span>
         </p>
     </div>
 </div>
@@ -44,9 +40,9 @@
                     <tr>
                         <th>ID</th>
                         <th>設定名</th>
-                        <th>サーバー</th>
-                        <th>ポート</th>
-                        <th>ユーザー名</th>
+                        <th>リレーログイン</th>
+                        <th>転送先サーバー</th>
+                        <th>転送先ユーザー</th>
                         <th>TLS</th>
                         <th>状態</th>
                         <th>操作</th>
@@ -57,8 +53,8 @@
                     <tr>
                         <td>{{ config.id }}</td>
                         <td><strong>{{ config.name }}</strong></td>
-                        <td>{{ config.host }}</td>
-                        <td>{{ config.port }}</td>
+                        <td><code>{{ config.relay_username }}</code></td>
+                        <td>{{ config.host }}:{{ config.port }}</td>
                         <td><code>{{ config.username }}</code></td>
                         <td>
                             {% if config.use_ssl %}
@@ -110,6 +106,18 @@
                         <label class="form-label">設定名 <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="name" placeholder="本番SMTPサーバー" required>
                     </div>
+                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定（メールクライアントが使う認証情報）</h6>
+                    <div class="mb-3">
+                        <label class="form-label">リレーユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="relay_username" placeholder="user@example.com" required>
+                        <small class="text-muted">メールクライアントのSMTP設定で使うユーザー名</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">リレーパスワード <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="relay_password" required>
+                        <small class="text-muted">メールクライアントのSMTP設定で使うパスワード</small>
+                    </div>
+                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定（実際の送信サーバー）</h6>
                     <div class="mb-3">
                         <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="host" placeholder="smtp.example.com" required>
@@ -164,6 +172,16 @@
                         <label class="form-label">設定名 <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="name" id="edit_name" required>
                     </div>
+                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定（メールクライアントが使う認証情報）</h6>
+                    <div class="mb-3">
+                        <label class="form-label">リレーユーザー名 <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="relay_username" id="edit_relay_username" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">リレーパスワード</label>
+                        <input type="password" class="form-control" name="relay_password" id="edit_relay_password" placeholder="変更する場合のみ入力">
+                    </div>
+                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定（実際の送信サーバー）</h6>
                     <div class="mb-3">
                         <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="host" id="edit_host" required>
@@ -242,6 +260,7 @@ async function editRelay(configId) {
     const config = await response.json();
     document.getElementById('edit_config_id').value = config.id;
     document.getElementById('edit_name').value = config.name;
+    document.getElementById('edit_relay_username').value = config.relay_username;
     document.getElementById('edit_host').value = config.host;
     document.getElementById('edit_port').value = config.port;
     document.getElementById('edit_username').value = config.username;

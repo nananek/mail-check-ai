@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 
 
 class RelayAuthenticator:
-    """SMTP中継の認証ハンドラ"""
+    """SMTP中継の認証ハンドラ（DB駆動）"""
 
     def __call__(self, server, session, envelope, mechanism, auth_data):
         if isinstance(auth_data, LoginPassword):
@@ -44,11 +44,15 @@ class RelayAuthenticator:
         else:
             return AuthResult(success=False, handled=False)
 
-        expected_user = settings.SMTP_RELAY_AUTH_USERNAME
-        expected_pass = settings.SMTP_RELAY_AUTH_PASSWORD
-
-        if username == expected_user and password == expected_pass:
-            return AuthResult(success=True)
+        db = SessionLocal()
+        try:
+            config = db.query(SmtpRelayConfig).filter_by(
+                relay_username=username, enabled=True
+            ).first()
+            if config and config.relay_password == password:
+                return AuthResult(success=True, auth_data=username)
+        finally:
+            db.close()
 
         logger.warning(f"SMTP auth failed for user: {username}")
         return AuthResult(success=False, handled=False)
@@ -62,7 +66,8 @@ class RelayHandler:
 
     async def handle_DATA(self, server, session, envelope):
         """送信メールを受信して処理・転送"""
-        logger.info(f"Received outgoing email from {envelope.mail_from} to {envelope.rcpt_tos}")
+        relay_username = getattr(session, 'auth_data', None)
+        logger.info(f"Received outgoing email from {envelope.mail_from} to {envelope.rcpt_tos} (relay_user={relay_username})")
 
         try:
             raw_email = envelope.content
@@ -77,7 +82,7 @@ class RelayHandler:
             )
 
             await loop.run_in_executor(
-                None, self._forward_email, envelope
+                None, self._forward_email, envelope, relay_username
             )
 
             return '250 Message accepted for delivery'
@@ -87,7 +92,7 @@ class RelayHandler:
             # 処理失敗でも転送を試みる（メール消失防止）
             try:
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self._forward_email, envelope)
+                await loop.run_in_executor(None, self._forward_email, envelope, relay_username)
                 return '250 Message accepted for delivery'
             except Exception as fwd_err:
                 logger.error(f"Failed to forward email: {fwd_err}")
@@ -266,13 +271,17 @@ class RelayHandler:
         finally:
             db.close()
 
-    def _forward_email(self, envelope) -> None:
-        """転送先SMTPサーバーへメールを送信"""
+    def _forward_email(self, envelope, relay_username: str = None) -> None:
+        """転送先SMTPサーバーへメールを送信（認証ユーザー名で転送先を決定）"""
         db = SessionLocal()
         try:
-            relay_config = db.query(SmtpRelayConfig).filter_by(enabled=True).first()
+            relay_config = None
+            if relay_username:
+                relay_config = db.query(SmtpRelayConfig).filter_by(
+                    relay_username=relay_username, enabled=True
+                ).first()
             if not relay_config:
-                logger.error("No enabled SMTP relay configuration found!")
+                logger.error(f"No SMTP relay configuration found for user: {relay_username}")
                 raise RuntimeError("No SMTP relay configuration")
 
             logger.info(f"Forwarding to {relay_config.host}:{relay_config.port}")
@@ -312,13 +321,10 @@ def run_smtp_relay():
         'handler': handler,
         'hostname': settings.SMTP_RELAY_HOST,
         'port': settings.SMTP_RELAY_PORT,
+        'authenticator': RelayAuthenticator(),
+        'auth_required': True,
+        'auth_require_tls': False,
     }
-
-    # 認証設定
-    if settings.SMTP_RELAY_AUTH_USERNAME and settings.SMTP_RELAY_AUTH_PASSWORD:
-        controller_kwargs['authenticator'] = RelayAuthenticator()
-        controller_kwargs['auth_required'] = True
-        controller_kwargs['auth_require_tls'] = False
 
     # TLS設定
     if settings.SMTP_RELAY_USE_STARTTLS and settings.SMTP_RELAY_TLS_CERT:

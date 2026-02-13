@@ -31,8 +31,6 @@ class Settings(BaseSettings):
     SMTP_RELAY_ENABLED: bool = False
     SMTP_RELAY_HOST: str = "0.0.0.0"
     SMTP_RELAY_PORT: int = 587
-    SMTP_RELAY_AUTH_USERNAME: Optional[str] = None
-    SMTP_RELAY_AUTH_PASSWORD: Optional[str] = None
     SMTP_RELAY_USE_STARTTLS: bool = False
     SMTP_RELAY_TLS_CERT: Optional[str] = None
     SMTP_RELAY_TLS_KEY: Optional[str] = None
