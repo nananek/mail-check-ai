@@ -6,6 +6,9 @@ import json
 from datetime import datetime
 from pathlib import Path
 from src.config import settings
+from src.database import SessionLocal
+from src.models import PendingDiscordNotification
+from src.utils.business_hours import is_business_hours
 
 logging.basicConfig(
     level=logging.INFO,
@@ -106,27 +109,103 @@ class UsageNotifier:
             f.write(str(amount))
     
     def send_discord_notification(self, message: str) -> None:
-        """Discordへ通知"""
+        """Discordへ通知（業務時間外はキューに保存）"""
         webhook_url = settings.DISCORD_WEBHOOK_URL
         if not webhook_url:
             logger.warning("Discord webhook URL not configured")
             return
-        
+
+        payload = {
+            "embeds": [{
+                "title": "💰 OpenAI使用量通知",
+                "description": message,
+                "color": 15844367,  # ゴールド
+                "timestamp": datetime.utcnow().isoformat()
+            }]
+        }
+
+        if not is_business_hours():
+            try:
+                db = SessionLocal()
+                db.add(PendingDiscordNotification(
+                    webhook_url=webhook_url,
+                    payload=json.dumps(payload, ensure_ascii=False),
+                    created_at=datetime.utcnow()
+                ))
+                db.commit()
+                db.close()
+                logger.info("Usage notification queued (outside business hours)")
+            except Exception as e:
+                logger.error(f"Failed to queue usage notification: {e}")
+            return
+
         try:
-            payload = {
-                "embeds": [{
-                    "title": "💰 OpenAI使用量通知",
-                    "description": message,
-                    "color": 15844367,  # ゴールド
-                    "timestamp": datetime.utcnow().isoformat()
-                }]
-            }
             response = requests.post(webhook_url, json=payload, timeout=10)
             response.raise_for_status()
             logger.info("Usage notification sent to Discord")
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
     
+    def flush_notification_queue(self) -> None:
+        """キューに溜まった通知をまとめて送信"""
+        try:
+            db = SessionLocal()
+            pending = db.query(PendingDiscordNotification).order_by(
+                PendingDiscordNotification.created_at
+            ).all()
+            if not pending:
+                db.close()
+                return
+
+            logger.info(f"Flushing {len(pending)} queued Discord notifications")
+
+            # webhook_url ごとにグループ化
+            by_webhook: dict[str, list] = {}
+            for notif in pending:
+                by_webhook.setdefault(notif.webhook_url, []).append(notif)
+
+            for webhook_url, notifications in by_webhook.items():
+                try:
+                    descriptions = []
+                    for notif in notifications:
+                        original = json.loads(notif.payload)
+                        embed = original["embeds"][0]
+                        title = embed.get("title", "")
+                        desc = embed.get("description", "")
+                        fields = embed.get("fields", [])
+                        if desc:
+                            descriptions.append(f"**{title}**\n{desc}")
+                        elif fields:
+                            parts = [f"**{title}**"]
+                            for f in fields:
+                                parts.append(f"> {f['name']}: {f['value']}")
+                            descriptions.append("\n".join(parts))
+
+                    description = "\n\n".join(descriptions)
+                    if len(description) > 4000:
+                        description = description[:4000] + "\n\n...(省略)"
+
+                    payload = {
+                        "embeds": [{
+                            "title": f"📬 業務時間外の通知まとめ ({len(notifications)}件)",
+                            "description": description,
+                            "color": 5814783,
+                            "timestamp": datetime.utcnow().isoformat()
+                        }]
+                    }
+                    response = requests.post(webhook_url, json=payload, timeout=10)
+                    response.raise_for_status()
+                    logger.info(f"Flushed {len(notifications)} queued notifications to {webhook_url}")
+                except Exception as e:
+                    logger.error(f"Failed to flush notifications to {webhook_url}: {e}")
+
+            for notif in pending:
+                db.delete(notif)
+            db.commit()
+            db.close()
+        except Exception as e:
+            logger.error(f"Error flushing notification queue: {e}")
+
     def check_and_notify(self) -> None:
         """使用量をチェックして必要なら通知"""
         try:
@@ -174,10 +253,14 @@ class UsageNotifier:
         
         while True:
             try:
+                # 業務時間内ならキューに溜まった通知をフラッシュ
+                if is_business_hours():
+                    self.flush_notification_queue()
+
                 self.check_and_notify()
             except Exception as e:
                 logger.error(f"Error in main loop: {e}")
-            
+
             logger.info(f"Sleeping for {self.check_interval} seconds...")
             time.sleep(self.check_interval)
 

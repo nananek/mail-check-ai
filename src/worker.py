@@ -1,3 +1,4 @@
+import json
 import poplib
 import email
 from email.header import decode_header
@@ -10,11 +11,15 @@ import requests
 
 from sqlalchemy.orm import Session
 from src.database import SessionLocal
-from src.models import MailAccount, EmailAddress, ProcessedEmail, Customer, SystemSetting
+from src.models import (
+    MailAccount, EmailAddress, ProcessedEmail, Customer, SystemSetting,
+    PendingDiscordNotification
+)
 from src.utils.git_handler import GitHandler
 from src.utils.attachment_parser import AttachmentParser
 from src.utils.openai_client import OpenAIClient
 from src.utils.thread_manager import ThreadManager
+from src.utils.business_hours import is_business_hours
 from src.config import settings
 
 logging.basicConfig(
@@ -185,13 +190,23 @@ class EmailWorker:
                     # Discordへ通知
                     webhook_url = customer.discord_webhook or settings.DISCORD_WEBHOOK_URL
                     if webhook_url:
-                        self.send_discord_notification(
-                            webhook_url=webhook_url,
-                            customer_name=customer.name,
-                            from_address=from_address,
-                            subject=subject,
-                            summary=analysis['summary']
-                        )
+                        if is_business_hours():
+                            self.send_discord_notification(
+                                webhook_url=webhook_url,
+                                customer_name=customer.name,
+                                from_address=from_address,
+                                subject=subject,
+                                summary=analysis['summary']
+                            )
+                        else:
+                            self.queue_discord_notification(
+                                db=db,
+                                webhook_url=webhook_url,
+                                customer_name=customer.name,
+                                from_address=from_address,
+                                subject=subject,
+                                summary=analysis['summary']
+                            )
                     
                     # 既存のissueを取得
                     existing_issues = self.get_existing_issues(
@@ -298,6 +313,93 @@ class EmailWorker:
         except Exception as e:
             logger.error(f"Failed to send Discord notification: {e}")
     
+    def queue_discord_notification(
+        self,
+        db: Session,
+        webhook_url: str,
+        customer_name: str,
+        from_address: str,
+        subject: str,
+        summary: str
+    ) -> None:
+        """業務時間外の通知をキューに保存"""
+        try:
+            payload = {
+                "embeds": [{
+                    "title": f"📧 新着メール: {customer_name}",
+                    "color": 3447003,
+                    "fields": [
+                        {"name": "送信者", "value": from_address, "inline": False},
+                        {"name": "件名", "value": subject, "inline": False},
+                        {"name": "要約", "value": summary, "inline": False}
+                    ],
+                    "timestamp": datetime.utcnow().isoformat()
+                }]
+            }
+            db.add(PendingDiscordNotification(
+                webhook_url=webhook_url,
+                payload=json.dumps(payload, ensure_ascii=False),
+                created_at=datetime.utcnow()
+            ))
+            db.commit()
+            logger.info(f"Discord notification queued (outside business hours): {customer_name} - {subject}")
+        except Exception as e:
+            logger.error(f"Failed to queue Discord notification: {e}")
+            db.rollback()
+
+    def flush_notification_queue(self, db: Session) -> None:
+        """キューに溜まった通知をwebhook別にまとめて送信"""
+        pending = db.query(PendingDiscordNotification).order_by(
+            PendingDiscordNotification.created_at
+        ).all()
+        if not pending:
+            return
+
+        logger.info(f"Flushing {len(pending)} queued Discord notifications")
+
+        # webhook_url ごとにグループ化
+        by_webhook: Dict[str, list] = {}
+        for notif in pending:
+            by_webhook.setdefault(notif.webhook_url, []).append(notif)
+
+        for webhook_url, notifications in by_webhook.items():
+            try:
+                # 各通知のembedからフィールドを集めてまとめる
+                fields = []
+                for notif in notifications:
+                    original = json.loads(notif.payload)
+                    embed = original["embeds"][0]
+                    title = embed.get("title", "")
+                    embed_fields = embed.get("fields", [])
+                    sender = next((f["value"] for f in embed_fields if f["name"] == "送信者"), "")
+                    subj = next((f["value"] for f in embed_fields if f["name"] == "件名"), "")
+                    summary = next((f["value"] for f in embed_fields if f["name"] == "要約"), "")
+                    fields.append(f"**{title}**\n> 送信者: {sender}\n> 件名: {subj}\n> 要約: {summary}")
+
+                description = "\n\n".join(fields)
+                # Discord embed description の上限は 4096 文字
+                if len(description) > 4000:
+                    description = description[:4000] + "\n\n...(省略)"
+
+                payload = {
+                    "embeds": [{
+                        "title": f"📬 業務時間外の通知まとめ ({len(notifications)}件)",
+                        "description": description,
+                        "color": 5814783,
+                        "timestamp": datetime.utcnow().isoformat()
+                    }]
+                }
+                response = requests.post(webhook_url, json=payload, timeout=10)
+                response.raise_for_status()
+                logger.info(f"Flushed {len(notifications)} queued notifications to {webhook_url}")
+            except Exception as e:
+                logger.error(f"Failed to flush notifications to {webhook_url}: {e}")
+
+        # 送信済みのキューを削除
+        for notif in pending:
+            db.delete(notif)
+        db.commit()
+
     def get_existing_issues(
         self,
         repo_url: str,
@@ -435,7 +537,11 @@ class EmailWorker:
         while True:
             try:
                 db = SessionLocal()
-                
+
+                # 業務時間内ならキューに溜まった通知をまとめて送信
+                if is_business_hours():
+                    self.flush_notification_queue(db)
+
                 # 有効なメールアカウントを取得
                 accounts = db.query(MailAccount).filter_by(enabled=True).all()
                 

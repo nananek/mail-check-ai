@@ -133,6 +133,16 @@ class ThreadEmail(Base):
     )
 
 
+class PendingDiscordNotification(Base):
+    """業務時間外に保留されたDiscord通知"""
+    __tablename__ = 'pending_discord_notifications'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    webhook_url = Column(Text, nullable=False, comment='Discord Webhook URL')
+    payload = Column(Text, nullable=False, comment='通知ペイロード (JSON)')
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class SmtpRelayConfig(Base):
     """SMTP中継設定テーブル"""
     __tablename__ = 'smtp_relay_config'
