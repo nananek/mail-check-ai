@@ -97,14 +97,11 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
+                    <div class="mb-3 position-relative">
                         <label class="form-label">メールアドレス <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="email" id="add_email" placeholder="customer@example.com" required>
-                        <small class="text-muted">このアドレスからのメールのみ処理されます</small>
-                    </div>
-                    <div class="mb-3" id="suggestions_section" style="display: none;">
-                        <label class="form-label"><i class="bi bi-inbox"></i> 未登録の受信アドレス候補</label>
-                        <div id="suggestions_list" class="list-group list-group-flush" style="max-height: 200px; overflow-y: auto;"></div>
+                        <input type="text" class="form-control" name="email" id="add_email" placeholder="customer@example.com" autocomplete="off" required>
+                        <small class="text-muted">2文字以上入力すると過去の受信メールから候補を表示します</small>
+                        <div id="suggestions_list" class="list-group position-absolute w-100 shadow" style="z-index: 1050; max-height: 200px; overflow-y: auto; display: none;"></div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label">標準の宛名（オプション）</label>
@@ -164,34 +161,48 @@
 
 {% block extra_js %}
 <script>
-// 未登録アドレス候補を取得して表示
-const addEmailModal = document.getElementById('addEmailModal');
-addEmailModal.addEventListener('show.bs.modal', async () => {
-    const section = document.getElementById('suggestions_section');
-    const list = document.getElementById('suggestions_list');
-    try {
-        const resp = await fetch('/api/unregistered-addresses');
-        const data = await resp.json();
-        if (data.length === 0) {
-            section.style.display = 'none';
-            return;
-        }
-        list.innerHTML = '';
-        data.forEach(item => {
-            const a = document.createElement('a');
-            a.href = '#';
-            a.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center py-1 px-2';
-            a.innerHTML = `<span>${item.email}</span><span class="badge bg-secondary">${item.count}通</span>`;
-            a.addEventListener('click', (e) => {
-                e.preventDefault();
-                document.getElementById('add_email').value = item.email;
-            });
-            list.appendChild(a);
-        });
-        section.style.display = '';
-    } catch (e) {
-        section.style.display = 'none';
+// メールアドレスのインクリメンタルサーチ
+const addEmailInput = document.getElementById('add_email');
+const suggestionsList = document.getElementById('suggestions_list');
+let searchTimer = null;
+
+addEmailInput.addEventListener('input', function() {
+    clearTimeout(searchTimer);
+    const q = this.value.trim();
+    if (q.length < 2) {
+        suggestionsList.style.display = 'none';
+        return;
     }
+    searchTimer = setTimeout(async () => {
+        try {
+            const resp = await fetch(`/api/unregistered-addresses?q=${encodeURIComponent(q)}`);
+            const data = await resp.json();
+            suggestionsList.innerHTML = '';
+            if (data.length === 0) {
+                suggestionsList.style.display = 'none';
+                return;
+            }
+            data.forEach(item => {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center py-1 px-2';
+                a.innerHTML = `<span>${item.email}</span><span class="badge bg-secondary">${item.count}通</span>`;
+                a.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    addEmailInput.value = item.email;
+                    suggestionsList.style.display = 'none';
+                });
+                suggestionsList.appendChild(a);
+            });
+            suggestionsList.style.display = '';
+        } catch (e) {
+            suggestionsList.style.display = 'none';
+        }
+    }, 300);
+});
+
+addEmailInput.addEventListener('blur', () => {
+    setTimeout(() => { suggestionsList.style.display = 'none'; }, 200);
 });
 
 // Handle add email form submission

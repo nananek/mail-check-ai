@@ -278,35 +278,34 @@ async def update_customer(
 @app.get(
     "/api/unregistered-addresses",
     tags=["Email Addresses"],
-    summary="未登録の送信元アドレス一覧",
+    summary="未登録の送信元アドレスを検索",
 )
-def list_unregistered_addresses(db: Session = Depends(get_db)):
-    """過去の受信メールから、ホワイトリストに未登録のアドレスを受信回数付きで返す"""
+def search_unregistered_addresses(
+    q: str = Query("", description="検索文字列（部分一致）"),
+    db: Session = Depends(get_db),
+):
+    """過去の受信メールから、ホワイトリストに未登録のアドレスを部分一致で検索する"""
+    q = q.strip().lower()
+    if len(q) < 2:
+        return []
     registered = db.query(EmailAddress.email).subquery()
     rows = (
         db.query(
             ProcessedEmail.from_address,
             func.count().label("count"),
-            func.max(ProcessedEmail.processed_at).label("last_seen"),
         )
         .filter(
             ProcessedEmail.direction == "incoming",
             ProcessedEmail.from_address.isnot(None),
+            ProcessedEmail.from_address.contains(q),
             ~ProcessedEmail.from_address.in_(db.query(registered.c.email)),
         )
         .group_by(ProcessedEmail.from_address)
-        .order_by(func.count().desc())
-        .limit(100)
+        .order_by(ProcessedEmail.from_address)
+        .limit(20)
         .all()
     )
-    return [
-        {
-            "email": r.from_address,
-            "count": r.count,
-            "last_seen": r.last_seen.isoformat() if r.last_seen else None,
-        }
-        for r in rows
-    ]
+    return [{"email": r.from_address, "count": r.count} for r in rows]
 
 
 @app.get("/email-addresses", response_class=HTMLResponse)
