@@ -55,7 +55,13 @@
                         <td><strong>{{ config.name }}</strong></td>
                         <td><code>{{ config.relay_username }}</code></td>
                         <td>{{ config.host }}:{{ config.port }}</td>
-                        <td><code>{{ config.username }}</code></td>
+                        <td>
+                            {% if config.username %}
+                            <code>{{ config.username }}</code>
+                            {% else %}
+                            <span class="text-muted">（リレーと同じ）</span>
+                            {% endif %}
+                        </td>
                         <td>
                             {% if config.use_ssl %}
                             <span class="badge bg-success">SSL</span>
@@ -106,18 +112,16 @@
                         <label class="form-label">設定名 <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="name" placeholder="本番SMTPサーバー" required>
                     </div>
-                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定（メールクライアントが使う認証情報）</h6>
+                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定</h6>
                     <div class="mb-3">
-                        <label class="form-label">リレーユーザー名 <span class="text-danger">*</span></label>
+                        <label class="form-label">メールアドレス（ログイン用） <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="relay_username" placeholder="user@example.com" required>
-                        <small class="text-muted">メールクライアントのSMTP設定で使うユーザー名</small>
+                        <small class="text-muted">メールクライアントのSMTP設定で使うユーザー名（メールアドレス）</small>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">リレーパスワード <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" name="relay_password" required>
-                        <small class="text-muted">メールクライアントのSMTP設定で使うパスワード</small>
+                    <div class="alert alert-info small py-2 mb-3">
+                        <i class="bi bi-info-circle"></i> パスワードはメールクライアントが送信したものをそのまま転送先SMTPに使用します
                     </div>
-                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定（実際の送信サーバー）</h6>
+                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定</h6>
                     <div class="mb-3">
                         <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="host" placeholder="smtp.example.com" required>
@@ -128,12 +132,9 @@
                         <small class="text-muted">STARTTLS: 587, SSL: 465</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="username" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">パスワード <span class="text-danger">*</span></label>
-                        <input type="password" class="form-control" name="password" required>
+                        <label class="form-label">ユーザー名（オプション）</label>
+                        <input type="text" class="form-control" name="username" placeholder="">
+                        <small class="text-muted">転送先SMTPのログインユーザー名がメールアドレスと異なる場合のみ入力</small>
                     </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" name="use_tls" id="add_use_tls" checked>
@@ -172,16 +173,15 @@
                         <label class="form-label">設定名 <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="name" id="edit_name" required>
                     </div>
-                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定（メールクライアントが使う認証情報）</h6>
+                    <h6 class="mt-3 mb-2 text-muted">リレー接続設定</h6>
                     <div class="mb-3">
-                        <label class="form-label">リレーユーザー名 <span class="text-danger">*</span></label>
+                        <label class="form-label">メールアドレス（ログイン用） <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="relay_username" id="edit_relay_username" required>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">リレーパスワード</label>
-                        <input type="password" class="form-control" name="relay_password" id="edit_relay_password" placeholder="変更する場合のみ入力">
+                    <div class="alert alert-info small py-2 mb-3">
+                        <i class="bi bi-info-circle"></i> パスワードはメールクライアントが送信したものをそのまま転送先SMTPに使用します
                     </div>
-                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定（実際の送信サーバー）</h6>
+                    <h6 class="mt-3 mb-2 text-muted">転送先SMTP設定</h6>
                     <div class="mb-3">
                         <label class="form-label">SMTPサーバー <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="host" id="edit_host" required>
@@ -191,12 +191,9 @@
                         <input type="number" class="form-control" name="port" id="edit_port" required>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">ユーザー名 <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="username" id="edit_username" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">パスワード</label>
-                        <input type="password" class="form-control" name="password" id="edit_password" placeholder="変更する場合のみ入力">
+                        <label class="form-label">ユーザー名（オプション）</label>
+                        <input type="text" class="form-control" name="username" id="edit_username">
+                        <small class="text-muted">転送先SMTPのログインユーザー名がメールアドレスと異なる場合のみ入力</small>
                     </div>
                     <div class="mb-3 form-check">
                         <input type="checkbox" class="form-check-input" name="use_tls" id="edit_use_tls">

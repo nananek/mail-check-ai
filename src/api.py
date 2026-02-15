@@ -826,11 +826,9 @@ async def smtp_relay_page(request: Request, db: Session = Depends(get_db)):
 async def create_smtp_relay_config(
     name: str = Form(...),
     relay_username: str = Form(...),
-    relay_password: str = Form(...),
     host: str = Form(...),
     port: int = Form(587),
-    username: str = Form(...),
-    password: str = Form(...),
+    username: str = Form(None),
     use_tls: bool = Form(False),
     use_ssl: bool = Form(False),
     enabled: bool = Form(False),
@@ -841,9 +839,9 @@ async def create_smtp_relay_config(
     if existing:
         raise HTTPException(status_code=400, detail="このリレーユーザー名は既に使用されています")
     config = SmtpRelayConfig(
-        name=name, relay_username=relay_username, relay_password=relay_password,
+        name=name, relay_username=relay_username,
         host=host, port=port,
-        username=username, password=password,
+        username=username if username and username.strip() else None,
         use_tls=use_tls, use_ssl=use_ssl, enabled=enabled
     )
     db.add(config)
@@ -856,11 +854,9 @@ async def update_smtp_relay_config(
     config_id: int = Form(...),
     name: str = Form(...),
     relay_username: str = Form(...),
-    relay_password: str = Form(None),
     host: str = Form(...),
     port: int = Form(587),
-    username: str = Form(...),
-    password: str = Form(None),
+    username: str = Form(None),
     use_tls: bool = Form(False),
     use_ssl: bool = Form(False),
     enabled: bool = Form(False),
@@ -881,13 +877,9 @@ async def update_smtp_relay_config(
 
     config.name = name
     config.relay_username = relay_username
-    if relay_password:
-        config.relay_password = relay_password
     config.host = host
     config.port = port
-    config.username = username
-    if password:
-        config.password = password
+    config.username = username if username and username.strip() else None
     config.use_tls = use_tls
     config.use_ssl = use_ssl
     config.enabled = enabled
