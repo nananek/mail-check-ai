@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field
@@ -272,6 +273,40 @@ async def update_customer(
     customer.name = name
     db.commit()
     return RedirectResponse(url="/customers", status_code=303)
+
+
+@app.get(
+    "/api/unregistered-addresses",
+    tags=["Email Addresses"],
+    summary="未登録の送信元アドレス一覧",
+)
+def list_unregistered_addresses(db: Session = Depends(get_db)):
+    """過去の受信メールから、ホワイトリストに未登録のアドレスを受信回数付きで返す"""
+    registered = db.query(EmailAddress.email).subquery()
+    rows = (
+        db.query(
+            ProcessedEmail.from_address,
+            func.count().label("count"),
+            func.max(ProcessedEmail.processed_at).label("last_seen"),
+        )
+        .filter(
+            ProcessedEmail.direction == "incoming",
+            ProcessedEmail.from_address.isnot(None),
+            ~ProcessedEmail.from_address.in_(db.query(registered.c.email)),
+        )
+        .group_by(ProcessedEmail.from_address)
+        .order_by(func.count().desc())
+        .limit(100)
+        .all()
+    )
+    return [
+        {
+            "email": r.from_address,
+            "count": r.count,
+            "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+        }
+        for r in rows
+    ]
 
 
 @app.get("/email-addresses", response_class=HTMLResponse)
