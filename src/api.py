@@ -212,76 +212,46 @@ async def customers_page(request: Request, db: Session = Depends(get_db)):
         }
         for c in customers
     ]
-    # 自動プロビジョニングが利用可能か（Gitea + Discord Bot の両方が設定済み）
-    auto_provision_available = all([
-        settings.DEFAULT_GITEA_HOST,
-        settings.DEFAULT_GITEA_TOKEN,
-        settings.DISCORD_BOT_TOKEN,
-        settings.DISCORD_CATEGORY_ID,
-    ])
-
     return templates.TemplateResponse("customers.html", {
         "request": request,
         "customers": customers_data,
-        "default_gitea_host": settings.DEFAULT_GITEA_HOST,
-        "has_default_token": settings.DEFAULT_GITEA_TOKEN is not None,
-        "auto_provision_available": auto_provision_available,
     })
 
 
 @app.post("/customers")
 async def create_customer(
     name: str = Form(...),
-    repo_url: str = Form(""),
-    gitea_token: str = Form(None),
-    discord_webhook: str = Form(None),
-    auto_provision: bool = Form(False),
+    slug: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    """顧客を作成（自動プロビジョニング対応）"""
-    from src.utils.provisioning import create_gitea_repo, create_discord_channel_with_webhook
+    """顧客を作成（Giteaリポジトリ・Discordチャンネルを自動プロビジョニング）"""
+    from src.utils.provisioning import (
+        preflight_check, create_gitea_repo, create_discord_channel_with_webhook,
+    )
 
-    final_repo_url = None
-    final_discord_webhook = None
+    # 事前チェック: Gitea・Discord両方で名前の重複がないか確認
+    try:
+        preflight_check(slug)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    if auto_provision:
-        # Giteaリポジトリを自動作成
-        try:
-            final_repo_url = create_gitea_repo(name)
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=f"Giteaリポジトリの自動作成に失敗: {e}")
+    # Giteaリポジトリを自動作成
+    try:
+        repo_url = create_gitea_repo(slug, name)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"Giteaリポジトリの自動作成に失敗: {e}")
 
-        # Discordチャンネル＋Webhookを自動作成
-        try:
-            final_discord_webhook = create_discord_channel_with_webhook(name)
-        except RuntimeError as e:
-            raise HTTPException(status_code=400, detail=f"Discordチャンネルの自動作成に失敗: {e}")
-    else:
-        # 手動入力モード
-        final_repo_url = repo_url.strip()
-        if not final_repo_url:
-            raise HTTPException(status_code=400, detail="リポジトリURLを入力してください")
-
-        # If repo_url is in short form (owner/repo) and we have a default host, expand it
-        if settings.DEFAULT_GITEA_HOST and '://' not in final_repo_url:
-            if not final_repo_url.endswith('.git'):
-                final_repo_url = f"{final_repo_url}.git"
-            final_repo_url = f"{settings.DEFAULT_GITEA_HOST.rstrip('/')}/{final_repo_url}"
-
-        final_discord_webhook = discord_webhook if discord_webhook else None
-
-    # Use default token if not provided
-    final_gitea_token = gitea_token.strip() if gitea_token and gitea_token.strip() else settings.DEFAULT_GITEA_TOKEN
-
-    # Validate that we have a token
-    if not final_gitea_token:
-        raise HTTPException(status_code=400, detail="Gitea token is required (no default configured)")
+    # Discordチャンネル＋Webhookを自動作成
+    try:
+        discord_webhook = create_discord_channel_with_webhook(slug)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=f"Discordチャンネルの自動作成に失敗: {e}")
 
     customer = Customer(
         name=name,
-        repo_url=final_repo_url,
-        gitea_token=final_gitea_token,
-        discord_webhook=final_discord_webhook
+        repo_url=repo_url,
+        gitea_token=settings.DEFAULT_GITEA_TOKEN,
+        discord_webhook=discord_webhook
     )
     db.add(customer)
     db.commit()
@@ -292,31 +262,14 @@ async def create_customer(
 async def update_customer(
     customer_id: int = Form(...),
     name: str = Form(...),
-    repo_url: str = Form(...),
-    gitea_token: str = Form(None),
-    discord_webhook: str = Form(None),
     db: Session = Depends(get_db)
 ):
-    """顧客を更新"""
+    """顧客名を更新"""
     customer = db.query(Customer).filter_by(id=customer_id).first()
     if not customer:
         raise HTTPException(status_code=404, detail="Customer not found")
-    
-    # Process repository URL
-    final_repo_url = repo_url.strip()
-    
-    # If repo_url is in short form (owner/repo) and we have a default host, expand it
-    if settings.DEFAULT_GITEA_HOST and '://' not in final_repo_url:
-        # Short form: owner/repo -> https://gitea.example.com/owner/repo.git
-        if not final_repo_url.endswith('.git'):
-            final_repo_url = f"{final_repo_url}.git"
-        final_repo_url = f"{settings.DEFAULT_GITEA_HOST.rstrip('/')}/{final_repo_url}"
-    
+
     customer.name = name
-    customer.repo_url = final_repo_url
-    if gitea_token and gitea_token.strip():
-        customer.gitea_token = gitea_token.strip()
-    customer.discord_webhook = discord_webhook if discord_webhook else None
     db.commit()
     return RedirectResponse(url="/customers", status_code=303)
 
