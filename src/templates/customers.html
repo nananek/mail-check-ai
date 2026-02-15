@@ -84,33 +84,44 @@
                         <label class="form-label">顧客名 <span class="text-danger">*</span></label>
                         <input type="text" class="form-control" name="name" required>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Gitea リポジトリ <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" name="repo_url" 
-                               placeholder="{% if default_gitea_host %}owner/repo または完全なURL{% else %}https://gitea.example.com/user/repo.git{% endif %}" required>
-                        {% if default_gitea_host %}
-                        <small class="text-muted">デフォルトホスト: {{ default_gitea_host }} - 簡略形式 (owner/repo) または完全なURLを入力</small>
-                        {% else %}
-                        <small class="text-muted">例: https://gitea.example.com/user/repo.git</small>
-                        {% endif %}
+                    {% if auto_provision_available %}
+                    <div class="mb-3 form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="auto_provision_check" name="auto_provision" value="true" checked>
+                        <label class="form-check-label" for="auto_provision_check">
+                            <i class="bi bi-magic"></i> 自動セットアップ
+                        </label>
+                        <div><small class="text-muted">Giteaリポジトリ・Discordチャンネル・Webhookを自動作成します</small></div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Gitea APIトークン {% if not has_default_token %}<span class="text-danger">*</span>{% else %}（オプション）{% endif %}</label>
-                        <input type="password" class="form-control" name="gitea_token" {% if not has_default_token %}required{% endif %}>
-                        {% if has_default_token %}
-                        <small class="text-muted">空欄の場合はデフォルトトークンを使用します</small>
-                        {% else %}
-                        <small class="text-muted">Giteaの個人用アクセストークン</small>
-                        {% endif %}
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Discord Webhook URL（オプション）</label>
-                        <input type="url" class="form-control" name="discord_webhook" placeholder="https://discord.com/api/webhooks/...">
+                    {% endif %}
+                    <div id="manual_fields" {% if auto_provision_available %}style="display: none;"{% endif %}>
+                        <div class="mb-3">
+                            <label class="form-label">Gitea リポジトリ <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="repo_url" id="add_repo_url"
+                                   placeholder="{% if default_gitea_host %}owner/repo または完全なURL{% else %}https://gitea.example.com/user/repo.git{% endif %}">
+                            {% if default_gitea_host %}
+                            <small class="text-muted">デフォルトホスト: {{ default_gitea_host }} - 簡略形式 (owner/repo) または完全なURLを入力</small>
+                            {% else %}
+                            <small class="text-muted">例: https://gitea.example.com/user/repo.git</small>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Gitea APIトークン {% if not has_default_token %}<span class="text-danger">*</span>{% else %}（オプション）{% endif %}</label>
+                            <input type="password" class="form-control" name="gitea_token" {% if not has_default_token %}required{% endif %}>
+                            {% if has_default_token %}
+                            <small class="text-muted">空欄の場合はデフォルトトークンを使用します</small>
+                            {% else %}
+                            <small class="text-muted">Giteaの個人用アクセストークン</small>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Discord Webhook URL（オプション）</label>
+                            <input type="url" class="form-control" name="discord_webhook" placeholder="https://discord.com/api/webhooks/...">
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">キャンセル</button>
-                    <button type="submit" class="btn btn-primary">登録</button>
+                    <button type="submit" class="btn btn-primary" id="addCustomerSubmit">登録</button>
                 </div>
             </form>
         </div>
@@ -161,17 +172,42 @@
 
 {% block extra_js %}
 <script>
+// 自動セットアップ切り替え
+const autoProvisionCheck = document.getElementById('auto_provision_check');
+if (autoProvisionCheck) {
+    autoProvisionCheck.addEventListener('change', function() {
+        const manualFields = document.getElementById('manual_fields');
+        const repoUrl = document.getElementById('add_repo_url');
+        if (this.checked) {
+            manualFields.style.display = 'none';
+            if (repoUrl) repoUrl.removeAttribute('required');
+        } else {
+            manualFields.style.display = '';
+            if (repoUrl) repoUrl.setAttribute('required', '');
+        }
+    });
+}
+
 // Handle add customer form submission
 document.getElementById('addCustomerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const formData = new FormData(e.target);
-    
+    const submitBtn = document.getElementById('addCustomerSubmit');
+    const originalText = submitBtn.textContent;
+
+    // 自動プロビジョニング時はローディング表示
+    const isAuto = formData.get('auto_provision') === 'true';
+    if (isAuto) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> セットアップ中...';
+    }
+
     try {
         const response = await fetch('/customers', {
             method: 'POST',
             body: formData
         });
-        
+
         if (response.ok) {
             location.reload();
         } else {
@@ -180,6 +216,9 @@ document.getElementById('addCustomerForm').addEventListener('submit', async (e) 
         }
     } catch (error) {
         alert('エラー: ' + error.message);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = originalText;
     }
 });
 

@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     DEFAULT_GITEA_HOST: Optional[str] = None  # e.g., "https://gitea.example.com"
     DEFAULT_GITEA_TOKEN: Optional[str] = None
     
+    # Discord Bot (チャンネル/Webhook自動作成用)
+    DISCORD_BOT_TOKEN: Optional[str] = None
+    DISCORD_CATEGORY_ID: Optional[str] = None
+
     # SMTP Relay (このシステムがSMTPサーバーとして動作)
     SMTP_RELAY_ENABLED: bool = False
     SMTP_RELAY_HOST: str = "0.0.0.0"
