@@ -1,7 +1,8 @@
 from datetime import datetime
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Session, relationship
 
 Base = declarative_base()
 
@@ -37,6 +38,20 @@ class EmailAddress(Base):
     __table_args__ = (
         Index('idx_email_customer', 'email', 'customer_id'),
     )
+
+    @classmethod
+    def resolve(cls, db: Session, email_addr: str) -> Optional["EmailAddress"]:
+        """メールアドレスを解決する（フルアドレス優先、次にドメイン一致）"""
+        email_addr = email_addr.lower().strip()
+        # フルアドレス完全一致
+        record = db.query(cls).filter_by(email=email_addr).first()
+        if record:
+            return record
+        # ドメイン一致（@domain.com 形式のエントリ）
+        domain = email_addr.split("@", 1)[-1] if "@" in email_addr else None
+        if domain:
+            record = db.query(cls).filter_by(email=f"@{domain}").first()
+        return record
 
 
 class MailAccount(Base):

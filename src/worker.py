@@ -119,8 +119,8 @@ class EmailWorker:
                 from_name, from_address = parseaddr(from_header)
                 from_address = from_address.lower()
                 
-                # ★ ホワイトリストチェック（未登録は完全無視）
-                email_record = db.query(EmailAddress).filter_by(email=from_address).first()
+                # ★ ホワイトリストチェック（フルアドレス優先、次にドメイン一致）
+                email_record = EmailAddress.resolve(db, from_address)
                 if not email_record:
                     logger.info(f"Ignoring email from unregistered address: {from_address}")
                     # 処理済みとしてマークして次回スキップ

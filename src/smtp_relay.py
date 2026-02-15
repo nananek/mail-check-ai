@@ -144,11 +144,10 @@ class RelayHandler:
         return attachments
 
     def _identify_customer(self, db: Session, to_addresses: list) -> Optional[Tuple[Customer, EmailAddress]]:
-        """宛先アドレスからemail_addressesテーブルを照合して顧客を特定"""
+        """宛先アドレスからemail_addressesテーブルを照合して顧客を特定（フルアドレス優先、次にドメイン一致）"""
         for addr in to_addresses:
             _, email_addr = parseaddr(addr) if '@' in addr else ('', addr)
-            email_addr = email_addr.lower().strip()
-            email_record = db.query(EmailAddress).filter_by(email=email_addr).first()
+            email_record = EmailAddress.resolve(db, email_addr)
             if email_record:
                 return email_record.customer, email_record
         return None
