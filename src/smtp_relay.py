@@ -28,10 +28,12 @@ from src.utils.openai_client import OpenAIClient
 from src.config import settings
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+# aiosmtpdの全SMTP通信をログ出力
+logging.getLogger('mail.log').setLevel(logging.DEBUG)
 
 
 class RelayAuthenticator:
@@ -327,6 +329,27 @@ class RelayHandler:
             db.close()
 
 
+def _generate_self_signed_cert():
+    """自己署名証明書を生成してSTARTTLSを有効にする"""
+    import subprocess
+    import tempfile
+    import os
+
+    cert_dir = tempfile.mkdtemp(prefix="smtp_relay_tls_")
+    cert_path = os.path.join(cert_dir, "cert.pem")
+    key_path = os.path.join(cert_dir, "key.pem")
+
+    subprocess.run([
+        "openssl", "req", "-x509", "-newkey", "rsa:2048",
+        "-keyout", key_path, "-out", cert_path,
+        "-days", "3650", "-nodes",
+        "-subj", "/CN=smtp-relay.local"
+    ], check=True, capture_output=True)
+
+    logger.info(f"Generated self-signed TLS certificate: {cert_path}")
+    return cert_path, key_path
+
+
 def run_smtp_relay():
     """SMTPリレーサーバーを起動"""
     if not settings.SMTP_RELAY_ENABLED:
@@ -344,16 +367,21 @@ def run_smtp_relay():
         'auth_require_tls': False,
     }
 
-    # TLS設定
-    if settings.SMTP_RELAY_USE_STARTTLS and settings.SMTP_RELAY_TLS_CERT:
+    # TLS設定: 証明書指定がなければ自己署名証明書を自動生成
+    if settings.SMTP_RELAY_USE_STARTTLS:
         import ssl
+        if settings.SMTP_RELAY_TLS_CERT:
+            cert_path = settings.SMTP_RELAY_TLS_CERT
+            key_path = settings.SMTP_RELAY_TLS_KEY
+        else:
+            cert_path, key_path = _generate_self_signed_cert()
         context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        context.load_cert_chain(settings.SMTP_RELAY_TLS_CERT, settings.SMTP_RELAY_TLS_KEY)
+        context.load_cert_chain(cert_path, key_path)
         controller_kwargs['tls_context'] = context
 
     controller = Controller(**controller_kwargs)
     controller.start()
-    logger.info(f"SMTP relay server started on {settings.SMTP_RELAY_HOST}:{settings.SMTP_RELAY_PORT}")
+    logger.info(f"SMTP relay server started on {settings.SMTP_RELAY_HOST}:{settings.SMTP_RELAY_PORT} (STARTTLS={'enabled' if settings.SMTP_RELAY_USE_STARTTLS else 'disabled'})")
 
     try:
         asyncio.get_event_loop().run_forever()

@@ -84,7 +84,7 @@ services:
       SMTP_RELAY_ENABLED: ${SMTP_RELAY_ENABLED:-false}
       SMTP_RELAY_HOST: "0.0.0.0"
       SMTP_RELAY_PORT: ${SMTP_RELAY_PORT:-587}
-      SMTP_RELAY_USE_STARTTLS: ${SMTP_RELAY_USE_STARTTLS:-false}
+      SMTP_RELAY_USE_STARTTLS: ${SMTP_RELAY_USE_STARTTLS:-true}
       SMTP_RELAY_OPEN_AUTH: ${SMTP_RELAY_OPEN_AUTH:-false}
     network_mode: "service:tailscale"  # Tailscaleネットワークを共有
     volumes:
