@@ -19,7 +19,7 @@ from aiosmtpd.smtp import SMTP as _SMTP, AuthResult, LoginPassword, MISSING
 from sqlalchemy.orm import Session
 from src.database import SessionLocal
 from src.models import (
-    EmailAddress, Customer, ProcessedEmail, SmtpRelayConfig
+    EmailAddress, Customer, ProcessedEmail, SmtpRelayConfig, ThreadIssue
 )
 from src.utils.thread_manager import ThreadManager
 from src.utils.git_handler import GitHandler
@@ -279,6 +279,33 @@ class RelayHandler:
                 summary=summary,
                 date=email_date
             )
+
+            # 関連Issueにコメント投稿
+            if summary:
+                try:
+                    thread_issues = db.query(ThreadIssue).filter_by(thread_id=thread.id).all()
+                    if thread_issues:
+                        from src.worker import EmailWorker
+                        comment_body = f"📤 **返信メール**\n"
+                        comment_body += f"**送信者:** {from_address}\n"
+                        comment_body += f"**件名:** {subject}\n\n"
+                        comment_body += f"**要約:**\n{summary}\n"
+                        if commit_hash:
+                            repo_url = customer.repo_url
+                            if repo_url.endswith('.git'):
+                                repo_url = repo_url[:-4]
+                            commit_url = f"{repo_url}/commit/{commit_hash}"
+                            comment_body += f"\n---\n[アーカイブ]({commit_url})"
+
+                        for ti in thread_issues:
+                            EmailWorker.comment_on_gitea_issue(
+                                repo_url=customer.repo_url,
+                                token=customer.gitea_token,
+                                issue_number=ti.issue_number,
+                                body=comment_body
+                            )
+                except Exception as e:
+                    logger.error(f"Failed to comment on Gitea issues: {e}")
 
             # 処理済みとしてマーク
             db.add(ProcessedEmail(

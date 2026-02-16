@@ -158,6 +158,23 @@ class PendingDiscordNotification(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class ThreadIssue(Base):
+    """スレッドに紐づくGitea Issue"""
+    __tablename__ = 'thread_issues'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    thread_id = Column(Integer, ForeignKey('conversation_threads.id', ondelete='CASCADE'), nullable=False)
+    issue_url = Column(Text, nullable=False, comment='Gitea Issue URL')
+    issue_number = Column(Integer, nullable=False, comment='Issue番号（APIコール用）')
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    thread = relationship('ConversationThread', backref='issues')
+
+    __table_args__ = (
+        Index('idx_thread_issue_thread', 'thread_id'),
+    )
+
+
 class SmtpRelayConfig(Base):
     """SMTP中継設定テーブル"""
     __tablename__ = 'smtp_relay_config'

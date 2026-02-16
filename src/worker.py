@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from src.database import SessionLocal
 from src.models import (
     MailAccount, EmailAddress, ProcessedEmail, Customer, SystemSetting,
-    PendingDiscordNotification
+    PendingDiscordNotification, ThreadIssue
 )
 from src.utils.git_handler import GitHandler
 from src.utils.attachment_parser import AttachmentParser
@@ -242,7 +242,18 @@ class EmailWorker:
                         
                         if issue_url:
                             issue_urls.append(issue_url)
-                    
+                            # Issue番号を抽出してDBに保存
+                            try:
+                                issue_number = int(issue_url.rstrip('/').split('/')[-1])
+                                db.add(ThreadIssue(
+                                    thread_id=thread.id,
+                                    issue_url=issue_url,
+                                    issue_number=issue_number
+                                ))
+                                db.flush()
+                            except Exception as e:
+                                logger.error(f"Failed to save ThreadIssue: {e}")
+
                     # スレッドにメール追加
                     try:
                         from email.utils import parsedate_to_datetime
@@ -529,7 +540,43 @@ class EmailWorker:
         except Exception as e:
             logger.error(f"Failed to create Gitea issue: {e}")
             return None
-    
+
+    @staticmethod
+    def comment_on_gitea_issue(
+        repo_url: str,
+        token: str,
+        issue_number: int,
+        body: str
+    ) -> bool:
+        """Gitea Issueにコメントを投稿"""
+        try:
+            if repo_url.endswith('.git'):
+                repo_url = repo_url[:-4]
+
+            parts = repo_url.replace('https://', '').replace('http://', '').split('/')
+            base_url = f"https://{parts[0]}"
+            owner = parts[1]
+            repo = parts[2]
+
+            api_url = f"{base_url}/api/v1/repos/{owner}/{repo}/issues/{issue_number}/comments"
+
+            response = requests.post(
+                api_url,
+                json={"body": body},
+                headers={
+                    "Authorization": f"token {token}",
+                    "Content-Type": "application/json"
+                },
+                timeout=10
+            )
+            response.raise_for_status()
+            logger.info(f"Commented on Gitea issue #{issue_number}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to comment on Gitea issue #{issue_number}: {e}")
+            return False
+
     def run(self) -> None:
         """メインループ"""
         logger.info("Email Worker started")
