@@ -14,7 +14,7 @@ from datetime import datetime
 from typing import Optional, List, Tuple
 
 from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import AuthResult, LoginPassword
+from aiosmtpd.smtp import SMTP as _SMTP, AuthResult, LoginPassword, MISSING
 
 from sqlalchemy.orm import Session
 from src.database import SessionLocal
@@ -34,6 +34,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 # aiosmtpdの全SMTP通信をログ出力
 logging.getLogger('mail.log').setLevel(logging.DEBUG)
+
+
+class RelaySMTP(_SMTP):
+    """AUTH LOGINのチャレンジ文字列をRFC標準形式に修正したSMTPクラス
+
+    aiosmtpdデフォルトの "User Name\\0" / "Password\\0" はOutlookが認識しないため、
+    標準の "Username:" / "Password:" を使用する。
+    """
+
+    async def auth_LOGIN(self, _, args):
+        login = await self.challenge_auth("Username:")
+        if login is MISSING:
+            return AuthResult(success=False)
+        password = await self.challenge_auth("Password:")
+        if password is MISSING:
+            return AuthResult(success=False)
+        return self._authenticate("LOGIN", LoginPassword(login, password))
 
 
 class RelayAuthenticator:
@@ -329,6 +346,13 @@ class RelayHandler:
             db.close()
 
 
+class RelayController(Controller):
+    """カスタムSMTPクラスを使用するController"""
+
+    def factory(self):
+        return RelaySMTP(self.handler, **self.SMTP_kwargs)
+
+
 def _generate_self_signed_cert():
     """自己署名証明書を生成してSTARTTLSを有効にする"""
     import subprocess
@@ -379,7 +403,7 @@ def run_smtp_relay():
         context.load_cert_chain(cert_path, key_path)
         controller_kwargs['tls_context'] = context
 
-    controller = Controller(**controller_kwargs)
+    controller = RelayController(**controller_kwargs)
     controller.start()
     logger.info(f"SMTP relay server started on {settings.SMTP_RELAY_HOST}:{settings.SMTP_RELAY_PORT} (STARTTLS={'enabled' if settings.SMTP_RELAY_USE_STARTTLS else 'disabled'})")
 
