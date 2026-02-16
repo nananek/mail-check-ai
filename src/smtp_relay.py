@@ -48,6 +48,11 @@ class RelayAuthenticator:
         else:
             return AuthResult(success=False, handled=False)
 
+        # オープン認証モード: DB未登録でも認証を通す（セットアップ・疎通確認用）
+        if settings.SMTP_RELAY_OPEN_AUTH:
+            logger.info(f"SMTP auth accepted (open auth mode) for user: {username}")
+            return AuthResult(success=True, auth_data=(username, password))
+
         db = SessionLocal()
         try:
             config = db.query(SmtpRelayConfig).filter_by(
@@ -289,6 +294,9 @@ class RelayHandler:
                 relay_username=relay_username, enabled=True
             ).first()
             if not relay_config:
+                if settings.SMTP_RELAY_OPEN_AUTH:
+                    logger.info(f"No relay config for {relay_username}, skipping forward (open auth mode)")
+                    return
                 logger.error(f"No SMTP relay configuration found for user: {relay_username}")
                 raise RuntimeError("No SMTP relay configuration")
 

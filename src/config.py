@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     SMTP_RELAY_USE_STARTTLS: bool = False
     SMTP_RELAY_TLS_CERT: Optional[str] = None
     SMTP_RELAY_TLS_KEY: Optional[str] = None
+    SMTP_RELAY_OPEN_AUTH: bool = False  # DB未登録でも認証を通す（セットアップ用）
 
     # Debug
     DEBUG: bool = False
