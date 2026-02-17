@@ -381,14 +381,19 @@ class RelayController(Controller):
 
 
 def _generate_self_signed_cert():
-    """自己署名証明書を生成してSTARTTLSを有効にする"""
+    """自己署名証明書を生成してSTARTTLSを有効にする（既存があれば再利用）"""
     import subprocess
-    import tempfile
     import os
 
-    cert_dir = tempfile.mkdtemp(prefix="smtp_relay_tls_")
+    cert_dir = "/app/data/tls"
     cert_path = os.path.join(cert_dir, "cert.pem")
     key_path = os.path.join(cert_dir, "key.pem")
+
+    if os.path.exists(cert_path) and os.path.exists(key_path):
+        logger.info(f"Reusing existing TLS certificate: {cert_path}")
+        return cert_path, key_path
+
+    os.makedirs(cert_dir, exist_ok=True)
 
     subprocess.run([
         "openssl", "req", "-x509", "-newkey", "rsa:2048",

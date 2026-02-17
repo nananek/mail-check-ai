@@ -93,6 +93,7 @@ services:
       - ./volumes/git_repos:/tmp/git_repos
       - ./volumes/postgres_socket:/var/run/postgresql
       - ./volumes/usage_state:/tmp
+      - ./volumes/smtp_tls:/app/data/tls
     depends_on:
       db:
         condition: service_healthy
