@@ -395,11 +395,22 @@ def _generate_self_signed_cert():
 
     os.makedirs(cert_dir, exist_ok=True)
 
+    hostname = settings.SMTP_RELAY_TLS_HOSTNAME
+
+    # SAN構築: IPアドレスならIP:、それ以外はDNS:として追加
+    import ipaddress
+    try:
+        ipaddress.ip_address(hostname)
+        san = f"IP:{hostname}"
+    except ValueError:
+        san = f"DNS:{hostname}"
+
     subprocess.run([
         "openssl", "req", "-x509", "-newkey", "rsa:2048",
         "-keyout", key_path, "-out", cert_path,
         "-days", "3650", "-nodes",
-        "-subj", "/CN=smtp-relay.local"
+        "-subj", f"/CN={hostname}",
+        "-addext", f"subjectAltName={san}"
     ], check=True, capture_output=True)
 
     logger.info(f"Generated self-signed TLS certificate: {cert_path}")
