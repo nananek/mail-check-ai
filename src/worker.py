@@ -31,9 +31,26 @@ logger = logging.getLogger(__name__)
 
 class EmailWorker:
     """POP3メール監視・処理ワーカー"""
-    
+
     def __init__(self):
         self.openai_client = OpenAIClient()
+
+    @staticmethod
+    def _parse_repo_url(repo_url: str) -> tuple:
+        """リポジトリURLをパースして (base_url, owner, repo) を返す"""
+        if repo_url.endswith('.git'):
+            repo_url = repo_url[:-4]
+
+        for scheme in ("https://", "http://"):
+            if repo_url.startswith(scheme):
+                rest = repo_url[len(scheme):]
+                parts = rest.split('/')
+                base_url = f"{scheme}{parts[0]}"
+                owner = parts[1]
+                repo = parts[2]
+                return base_url, owner, repo
+
+        raise ValueError(f"Unsupported repo URL scheme: {repo_url}")
     
     def decode_mime_words(self, s: str) -> str:
         """MIMEエンコードされた文字列をデコード"""
@@ -418,14 +435,8 @@ class EmailWorker:
     ) -> List[Dict[str, Any]]:
         """リポジトリの既存Issueを取得"""
         try:
-            if repo_url.endswith('.git'):
-                repo_url = repo_url[:-4]
-            
-            parts = repo_url.replace('https://', '').replace('http://', '').split('/')
-            base_url = f"https://{parts[0]}"
-            owner = parts[1]
-            repo = parts[2]
-            
+            base_url, owner, repo = self._parse_repo_url(repo_url)
+
             # オープンなissueを取得（最大100件）
             api_url = f"{base_url}/api/v1/repos/{owner}/{repo}/issues"
             
@@ -491,23 +502,17 @@ class EmailWorker:
     ) -> Optional[str]:
         """Gitea Issueを作成"""
         try:
-            # repo_url例: https://gitea.example.com/owner/repo.git
-            # API URL: https://gitea.example.com/api/v1/repos/owner/repo/issues
-            
-            if repo_url.endswith('.git'):
-                repo_url = repo_url[:-4]
-            
-            parts = repo_url.replace('https://', '').replace('http://', '').split('/')
-            base_url = f"https://{parts[0]}"
-            owner = parts[1]
-            repo = parts[2]
-            
+            base_url, owner, repo = self._parse_repo_url(repo_url)
+
+            # .gitを除いたリポジトリURL（リンク生成用）
+            repo_html_url = f"{base_url}/{owner}/{repo}"
+
             # Issue本文にcommitリンクと関連issueを追加
             enhanced_body = body
             
             if commit_hash and archive_path:
-                commit_url = f"{repo_url}/commit/{commit_hash}"
-                archive_url = f"{repo_url}/src/commit/{commit_hash}/{archive_path}"
+                commit_url = f"{repo_html_url}/commit/{commit_hash}"
+                archive_url = f"{repo_html_url}/src/commit/{commit_hash}/{archive_path}"
                 enhanced_body += f"\n\n---\n\n**📎 メールアーカイブ:**\n"
                 enhanced_body += f"- [コミット]({commit_url})\n"
                 enhanced_body += f"- [アーカイブフォルダ]({archive_url})\n"
@@ -541,8 +546,9 @@ class EmailWorker:
             logger.error(f"Failed to create Gitea issue: {e}")
             return None
 
-    @staticmethod
+    @classmethod
     def comment_on_gitea_issue(
+        cls,
         repo_url: str,
         token: str,
         issue_number: int,
@@ -550,13 +556,7 @@ class EmailWorker:
     ) -> bool:
         """Gitea Issueにコメントを投稿"""
         try:
-            if repo_url.endswith('.git'):
-                repo_url = repo_url[:-4]
-
-            parts = repo_url.replace('https://', '').replace('http://', '').split('/')
-            base_url = f"https://{parts[0]}"
-            owner = parts[1]
-            repo = parts[2]
+            base_url, owner, repo = cls._parse_repo_url(repo_url)
 
             api_url = f"{base_url}/api/v1/repos/{owner}/{repo}/issues/{issue_number}/comments"
 

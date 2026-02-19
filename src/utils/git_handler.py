@@ -22,10 +22,10 @@ class GitHandler:
         
     def _get_authenticated_url(self) -> str:
         """認証トークンを含むURLを生成"""
-        if self.repo_url.startswith("https://"):
-            # https://gitea.example.com/user/repo.git -> https://token@gitea.example.com/user/repo.git
-            parts = self.repo_url.replace("https://", "").split("/", 1)
-            return f"https://{self.gitea_token}@{parts[0]}/{parts[1]}"
+        for scheme in ("https://", "http://"):
+            if self.repo_url.startswith(scheme):
+                rest = self.repo_url[len(scheme):]
+                return f"{scheme}{self.gitea_token}@{rest}"
         return self.repo_url
     
     def sync_repository(self) -> Repo:
